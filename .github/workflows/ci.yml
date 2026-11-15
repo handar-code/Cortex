@@ -1,0 +1,38 @@
+name: CI
+
+# 持续集成：每次 push / PR 自动跑全量测试，固化「改动自动验证」。
+# 默认零依赖、无需任何密钥即可全绿（tests/conftest.py 在无 SILICONFLOW_API_KEY 时
+# 强制 offline 确定性向量）；如需顺带验证真语义路径，可在仓库 Settings → Secrets
+# 配置 SILICONFLOW_API_KEY，再取消下方 `with: env` 注释即可。
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: pytest (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install package + ANN extra
+        run: |
+          python -m pip install --upgrade pip
+          pip install .[ann]
+
+      - name: Run test suite (offline, no API key required)
+        # 收集范围限定在 tests/：避免误收 fixtures/sample_project 里的 test_*.py（示例项目文件，非本系统测试）。
+        run: python -m pytest tests -q
+        # 如需验证真语义路径，取消下行注释并确保仓库已配置 SILICONFLOW_API_KEY secret：
+        # env:
+        #   SILICONFLOW_API_KEY: ${{ secrets.SILICONFLOW_API_KEY }}
