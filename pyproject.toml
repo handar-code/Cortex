@@ -15,3 +15,10 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
+
+[tool.pytest.ini_options]
+# 只收集 tests/ 下的用例：fixtures/sample_project 里的 .py 是「被抽取的样本项目」，
+# 不是测试，禁止被 pytest 误当成 test_* 收集执行。
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+

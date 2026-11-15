@@ -27,8 +27,8 @@ from doc_system.governance import trigger
 from doc_system.governance import observability as obs
 from doc_system.governance import bootstrap as boot
 
-CFG = "config.example.yaml"
 ROOT = Path(__file__).resolve().parent.parent
+CFG = str(ROOT / "config.example.yaml")  # 绝对路径，避免 CI 在不同 CWD 下找不到配置
 
 
 class Phase2Test(unittest.TestCase):
