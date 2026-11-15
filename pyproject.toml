@@ -34,6 +34,12 @@ dependencies = ["pyyaml>=6.0"]
 # numpy 是 hnswlib 的传递依赖，显式列出以保证版本可控。
 ann = ["hnswlib>=0.8.0", "numpy>=1.23"]
 
+# 开发/测试依赖：pytest 是测试套件的唯一必需项。
+# CI（.github/workflows/ci.yml）与本地开发共用此 extra，避免「CI 装了什么」
+# 与「项目声明了什么」两处漂移 —— pytest 未声明曾导致 CI 全矩阵
+# 因 "No module named pytest" 直接失败。
+dev = ["pytest>=7.4"]
+
 # 真语义向量：本地模型服务（Ollama / llama.cpp / LM Studio / vLLM）与云端
 # （硅基流动 BAAI/bge-m3）都是同一个 OpenAI 兼容接口 POST /v1/embeddings，
 # 由标准库 urllib 实现，因此 **无需额外第三方依赖**，改 api_base 即可切换。

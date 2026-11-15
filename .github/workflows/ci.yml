@@ -30,6 +30,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install .[ann]
 
+      - name: Install test dependencies
+        # pytest 来自项目声明的 dev extra（pyproject.toml），不在运行时依赖里，
+        # 必须显式安装 —— 否则 pytest 步骤会因 "No module named pytest" 失败。
+        run: pip install .[dev]
+
       - name: Run test suite (offline, no API key required)
         # 收集范围限定在 tests/：避免误收 fixtures/sample_project 里的 test_*.py（示例项目文件，非本系统测试）。
         run: python -m pytest tests -q
