@@ -5,6 +5,10 @@ description = "通用、从零构建的项目知识库文档系统（不耦合�
 requires-python = ">=3.10"
 dependencies = ["pyyaml"]
 
+[project.optional-dependencies]
+ann = ["hnswlib>=0.8.0", "numpy"]
+remote = ["requests"]
+
 [build-system]
 requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
