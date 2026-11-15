@@ -1,0 +1,52 @@
+# 5 分钟 Quickstart 专用配置：零配置、无 API key、不联网、可复现。
+#
+# 与 config.example.yaml 的区别：
+#   - config.example.yaml 展示"生产部署"默认（siliconflow / BAAI/bge-m3 真语义，需 key）；
+#   - 本文件把 embedding + attribution 两处 provider 都设为 offline（确定性哈希向量），
+#     因此无需任何密钥即可走通 建档 → 索引 → 检索 全链路。
+# 跑通后想升级为真语义，把 config.example.yaml 复制为 config.yaml 并配好
+# SILICONFLOW_API_KEY（见 README「向量通道」）。
+#
+# roots 是相对本配置文件所在目录的路径；直接指向仓库自带的合成示例项目。
+
+project:
+  name: "quickstart-sample"
+
+roots:
+  - path: "fixtures/sample_project"
+
+blacklist:
+  - "**/node_modules/**"
+  - "**/__pycache__/**"
+  - "**/.git/**"
+
+languages:
+  - name: python
+    extensions: [".py"]
+    extractor: python_ast
+  - name: plaintext
+    extensions: [".md", ".txt"]
+    extractor: plaintext
+
+triage:
+  test_patterns:
+    - "**/test_*.py"
+    - "**/*_test.py"
+  generated_patterns:
+    - "**/*.generated.*"
+    - "**/*.gen.*"
+
+embedding:
+  provider: offline
+
+attribution:
+  enabled: true
+  provider: offline
+  scope_depth: 1
+  domain_from: structural
+  text_channel: true
+
+index:
+  neighbor_pool: 0
+
+ann_provider: flat

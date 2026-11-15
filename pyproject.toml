@@ -9,12 +9,21 @@ dependencies = ["pyyaml"]
 ann = ["hnswlib>=0.8.0", "numpy"]
 remote = ["requests"]
 
+# 独立命令行入口：pip install 后可直接用 `cortex <子命令>`，无需再记 python -m。
+# 保留 `doc-system` 作为兼容别名，两者指向同一 main()。
+[project.scripts]
+cortex = "doc_system.cli:main"
+doc-system = "doc_system.cli:main"
+
 [build-system]
 requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [tool.pytest.ini_options]
 # 只收集 tests/ 下的用例：fixtures/sample_project 里的 .py 是「被抽取的样本项目」，

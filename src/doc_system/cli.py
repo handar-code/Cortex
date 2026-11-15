@@ -244,7 +244,12 @@ def cmd_bootstrap(args):
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="doc-system", description="通用项目知识库文档系统")
+    # prog 跟随实际入口名：cortex（官方命令）/ doc-system（兼容别名）均显示自身；
+    # python -m doc_system.cli 时 stem 为 cli/__main__，统一回落到 cortex。
+    prog = Path(sys.argv[0]).stem
+    if prog in ("__main__", "cli", ""):
+        prog = "cortex"
+    p = argparse.ArgumentParser(prog=prog, description="通用项目知识库文档系统")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     def add_out(sp, default="catalog.snapshot.json"):
