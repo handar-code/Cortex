@@ -77,6 +77,15 @@ def _neighbor_pool(args) -> int:
     return 0
 
 
+def _ann_provider(args) -> str:
+    """向量检索后端：--ann-provider 显式值 > config 的 ann_provider > flat(默认零依赖)。"""
+    if getattr(args, "ann_provider", None):
+        return args.ann_provider
+    if getattr(args, "config", None):
+        return _load_cfg(args).ann_provider
+    return "flat"
+
+
 # ----------------------------- Phase 1 -----------------------------
 def cmd_ingest(args):
     cfg = _load_cfg(args)
@@ -144,16 +153,18 @@ def cmd_render(args):
 def cmd_index(args):
     cat = _active(args)
     pool = _neighbor_pool(args)
-    idx = build_index(cat, embedder=_embedder(args), out_path=args.out, k=args.neighbors, neighbor_pool=pool)
+    ann = _ann_provider(args)
+    idx = build_index(cat, embedder=_embedder(args), out_path=args.out, k=args.neighbors, neighbor_pool=pool, ann_provider=ann)
     tag = f" 近邻池={pool}(近似)" if idx.neighbor_approx else " 近邻=精确全量"
-    print(f"[index] 条目={len(idx.entries)} 邻居k={args.neighbors} provider={type(idx.embedder).__name__}{tag} -> {args.out}")
+    print(f"[index] 条目={len(idx.entries)} 邻居k={args.neighbors} provider={type(idx.embedder).__name__} ann={idx.ann_provider}{tag} -> {args.out}")
     return 0
 
 
 def cmd_retrieve(args):
     cat = _active(args)
     pool = _neighbor_pool(args)
-    idx = build_index(cat, embedder=_embedder(args), k=args.neighbors, neighbor_pool=pool)
+    ann = _ann_provider(args)
+    idx = build_index(cat, embedder=_embedder(args), k=args.neighbors, neighbor_pool=pool, ann_provider=ann)
     # 重排 provider：显式 --rerank 优先（none=强制关）；只有"未传 --rerank"才回退 config.retrieval.rerank
     explicit = getattr(args, "rerank", None)
     if explicit is not None:
@@ -249,8 +260,8 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("rollback"); sp.add_argument("--store", default=".docstore"); sp.add_argument("--version", required=True); sp.set_defaults(func=cmd_rollback)
 
     sp = sub.add_parser("render"); sp.add_argument("--config", required=True); sp.add_argument("--store", default=".docstore"); sp.add_argument("--out", default=".doc_system"); sp.set_defaults(func=cmd_render)
-    sp = sub.add_parser("index"); sp.add_argument("--config", default=None); sp.add_argument("--store", default=".docstore"); sp.add_argument("--out", default=".doc_system/index/index.json"); sp.add_argument("--neighbors", type=int, default=3); sp.add_argument("--provider", default=None, choices=["offline", "siliconflow"], help="向量通道：默认读 config embedding 段，否则 offline"); sp.add_argument("--neighbor-pool", type=int, default=None, help="近邻候选池上限(大项目采样近似,0=精确全量);默认读 config"); sp.set_defaults(func=cmd_index)
-    sp = sub.add_parser("retrieve"); sp.add_argument("--config", default=None); sp.add_argument("--store", default=".docstore"); sp.add_argument("--query", required=True); sp.add_argument("--k", type=int, default=5); sp.add_argument("--neighbors", type=int, default=3); sp.add_argument("--provider", default=None, choices=["offline", "siliconflow"]); sp.add_argument("--neighbor-pool", type=int, default=None, help="近邻候选池上限;默认读 config"); sp.add_argument("--rerank", default=None, choices=["none", "offline", "siliconflow"], help="查询时重排(选项C): 用 bge-m3 对 top-N 候选项重排,覆盖 offline 哈希噪声;默认读 config.retrieval.rerank"); sp.add_argument("--rerank-candidates", type=int, default=None, help="重排候选池大小;默认读 config.retrieval.rerank_candidates(20)"); sp.set_defaults(func=cmd_retrieve)
+    sp = sub.add_parser("index"); sp.add_argument("--config", default=None); sp.add_argument("--store", default=".docstore"); sp.add_argument("--out", default=".doc_system/index/index.json"); sp.add_argument("--neighbors", type=int, default=3); sp.add_argument("--provider", default=None, choices=["offline", "siliconflow"], help="向量通道：默认读 config embedding 段，否则 offline"); sp.add_argument("--neighbor-pool", type=int, default=None, help="近邻候选池上限(大项目采样近似,0=精确全量);默认读 config"); sp.add_argument("--ann-provider", default=None, choices=["flat", "hnsw"], help="向量检索后端: flat(暴力余弦,默认) | hnsw(hnswlib 近似最近邻);默认读 config.ann_provider"); sp.set_defaults(func=cmd_index)
+    sp = sub.add_parser("retrieve"); sp.add_argument("--config", default=None); sp.add_argument("--store", default=".docstore"); sp.add_argument("--query", required=True); sp.add_argument("--k", type=int, default=5); sp.add_argument("--neighbors", type=int, default=3); sp.add_argument("--provider", default=None, choices=["offline", "siliconflow"]); sp.add_argument("--neighbor-pool", type=int, default=None, help="近邻候选池上限;默认读 config"); sp.add_argument("--ann-provider", default=None, choices=["flat", "hnsw"], help="向量检索后端: flat(默认) | hnsw;默认读 config.ann_provider"); sp.add_argument("--rerank", default=None, choices=["none", "offline", "siliconflow"], help="查询时重排(选项C): 用 bge-m3 对 top-N 候选项重排,覆盖 offline 哈希噪声;默认读 config.retrieval.rerank"); sp.add_argument("--rerank-candidates", type=int, default=None, help="重排候选池大小;默认读 config.retrieval.rerank_candidates(20)"); sp.set_defaults(func=cmd_retrieve)
 
     sp = sub.add_parser("gen-skill"); sp.add_argument("--store", default=".docstore"); sp.add_argument("--out", default=".doc_system"); sp.set_defaults(func=cmd_gen_skill)
     sp = sub.add_parser("gen-agents-md"); sp.add_argument("--store", default=".docstore"); sp.add_argument("--out", default=".doc_system"); sp.set_defaults(func=cmd_gen_agents_md)

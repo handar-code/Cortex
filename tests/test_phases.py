@@ -473,5 +473,126 @@ class RerankTest(unittest.TestCase):
         self.assertNotIn("rerank", r)  # 无额外字段污染
 
 
+class ConcurrencyTest(unittest.TestCase):
+    """SiliconFlowEmbedder 并发嵌入：并行发送 batch 但输出顺序须与输入一致。"""
+
+    def test_concurrent_embeds_preserves_order(self):
+        from doc_system.index import SiliconFlowEmbedder
+
+        class StubSF(SiliconFlowEmbedder):
+            def _embed_batch(self, batch):
+                # 不真正打 API：用 batch 内每段文本的序号决定返回向量，便于校验顺序
+                out = []
+                for t in batch:
+                    n = int(t.split("|")[1])
+                    v = [0.0] * 4
+                    v[n % 4] = 1.0
+                    out.append(v)
+                return out
+
+        emb = StubSF(api_key="x", batch_size=4, max_concurrency=8)
+        texts = [f"t|{i}" for i in range(100)]  # 25 batches，远大于并发度
+        vecs = emb.embed_many(texts)
+        self.assertEqual(len(vecs), 100)
+        for i, v in enumerate(vecs):
+            # 第 i 段应落到第 i%4 维为 1
+            self.assertEqual(v[i % 4], 1.0)
+            self.assertEqual(sum(v), 1.0)
+
+    def test_max_concurrency_one_is_serial(self):
+        from doc_system.index import SiliconFlowEmbedder
+
+        calls = []
+
+        class StubSF(SiliconFlowEmbedder):
+            def _embed_batch(self, batch):
+                calls.append(tuple(batch))
+                return [[1.0, 0.0]] * len(batch)
+
+        emb = StubSF(api_key="x", batch_size=2, max_concurrency=1)
+        emb.embed_many(["a", "b", "c"])
+        self.assertEqual(len(calls), 2)  # ceil(3/2)=2 batches
+
+
+class ANNBackendTest(unittest.TestCase):
+    """可插拔 ANN 后端：(a) hnsw 与 flat top-k 高度一致；(b) flat 检索行为与原实现一致。"""
+
+    def _rand_unit(self, rng, n, dim):
+        import numpy as np
+
+        v = rng.standard_normal((n, dim))
+        norm = np.linalg.norm(v, axis=1, keepdims=True)
+        v = v / np.where(norm == 0, 1.0, norm)
+        return v.tolist()
+
+    def test_hnsw_matches_flat_topk_small_dataset(self):
+        # 小数据集下 hnsw（近似）应与 flat（暴力余弦）top-k 集合高度一致（顺序可微差）。
+        import numpy as np
+        from doc_system.index import FlatBackend, HnswBackend
+
+        rng = np.random.default_rng(20240607)
+        dim, n = 32, 80
+        vectors = self._rand_unit(rng, n, dim)
+        flat = FlatBackend(dim)
+        flat.build(vectors)
+        hnsw = HnswBackend(dim)
+        hnsw.build(vectors)
+
+        k = 10
+        mismatches = 0
+        for _ in range(20):
+            q = self._rand_unit(rng, 1, dim)[0]
+            flat_idx = {i for _, i in flat.query(q, k)}
+            hnsw_idx = {i for _, i in hnsw.query(q, k)}
+            # 小数据集 ef=n 召回充分：top-k 集合应完全重合
+            if flat_idx != hnsw_idx:
+                mismatches += 1
+        self.assertEqual(
+            mismatches, 0,
+            f"hnsw 与 flat top-k 集合不一致的次数={mismatches}/20（小数据集应全一致）",
+        )
+
+    def test_flat_provider_retrieval_matches_brute_force(self):
+        # ann_provider="flat" 时检索行为与原实现（暴力余弦）一致；默认亦为 flat。
+        from doc_system.index import FlatBackend, KnowledgeIndex, OfflineEmbedder
+
+        cfg = Config.load(CFG)
+        cat = ingest(cfg, out_path=None)
+        emb = OfflineEmbedder()
+        texts = [
+            f"{s.name} {s.signature} {s.docstring} {s.content}".strip()[:6000]
+            for s in cat.symbols
+        ]
+        vectors = emb.embed_many(texts)
+
+        # 显式 flat
+        idx = KnowledgeIndex(cat, embedder=emb, ann_provider="flat")
+        self.assertIsInstance(idx.backend, FlatBackend)
+
+        # 默认（不传 ann_provider）亦应为 flat
+        idx_default = KnowledgeIndex(cat, embedder=emb)
+        self.assertIsInstance(idx_default.backend, FlatBackend)
+
+        # 期望：对 query 暴力余弦取 top-k（不开启重排）
+        q = "user login create"
+        qvec = emb.embed(q)
+        expected = sorted(
+            ((sum(x * y for x, y in zip(qvec, v)), s.name) for s, v in zip(cat.symbols, vectors)),
+            key=lambda x: x[0], reverse=True,
+        )[:5]
+        expected_names = {name for _, name in expected}
+
+        r = idx.retrieve(q, k=5)
+        got_names = {h["name"] for h in r["vector_hits"]}
+        self.assertEqual(got_names, expected_names)
+        # 得分口径一致：flat 的 score 即余弦相似度（保留 4 位）
+        for h in r["vector_hits"]:
+            sc = round(
+                sum(x * y for x, y in zip(qvec, next(v for s, v in zip(cat.symbols, vectors) if s.name == h["name"]))),
+                4,
+            )
+            self.assertAlmostEqual(h["score"], sc, places=4)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,66 +1,36 @@
-# Cortex
+# doc-system
 
-> 让一个对新项目一无所知的新 Agent，快速、可靠地接手。
-> 把乱糟糟的源码、注释、Markdown，结构化成**可归因、可检索、可治理**的知识记忆层。
+**通用的、从零构建的项目知识库文档系统**，专为「让一个对新项目一无所知的新 Agent 快速、可靠地接手」而设计。
+系统**不耦合任何具体项目**——所有项目结构、语言、触发方式、治理规则都通过 `config.yaml` 配置，代码本身零硬编码。
 
-系统定位、设计主线、架构、命令参考见 `docs/design.md`（完整设计稿，Phase 1–6 全部落地）与 `docs/system-readme.md`（技术 README）。本文件讲**理念**与**设计过程**——也就是「为什么是它、怎么走到今天」。
+本仓库是设计稿《面向 Agent 接手的项目知识库：文档系统设计方案》的**完整实现**（Phase 1~6 全部落地）。
 
-## 一、名字的由来
+## 设计原则（实现遵循）
 
-**Cortex = 大脑皮层**。一个 Agent 接手新项目，缺的往往不是代码，而是「关于这个项目该往哪想」的知识皮层。Cortex 把原始代码 / 文档沉淀成结构化的、可按域检索、可溯源、有治理的记忆层，相当于给 Agent 外接了一块「项目知识脑皮层」。
+- **通用 / 解耦**：不与任何项目绑定；`fixtures/sample_project/` 只是合成示例。
+- **确定性优先**：内置甄别 + 内置提取为主路径；AI 提取仅作兜底升级（§13.1）。
+- **归因双轨（§12）**：`@domain` 显式键 ‖ 向量隐式轨（软归属）平等裁决。**domain 永不因缺手写标注而全空**——真实项目无 `@domain` 时，用目录树 scope（§13.4 Q5）作稳定归属 + 向量隐式轨产出软分布，结果随 catalog 快照存留。
+- **三件套 + 三通道（§13.4）**：`向量 + 注释(@domain) + 注释文本(docstring)` 成对并列；检索返回 `annotation_hits` / `annotation_text_hits` / `vector_hits` **三通道并列、互不为主、不预融合**，交 Agent 裁决。向量方向与文本注释方向地位平等（§12.1）。
+- **git 式 catalog**：每次重算 = 一次提交（强制 `change_reason`、可回滚、`active`=已发布版），并兜住「代码改了但 catalog 没跟上」的漂移窗口（§13.1 / §13.8 Q-3）。
+- **读 = Skill（零写）/ 写 = MCP（git 式提交）**：双通道物理分离（§13.7）。
+- **零人治理**：写侧质量门禁（声明级溯源）、触发分权（git hook/CI/Agent）、外部探针自动判 + 异构 jury + 行为金丝雀、宪法 AI 自举（§13.6 / §13.8 / §14）。
 
-> 名字由本仓库创建者所起，随时可改；仓库目录即 `cortex`。
-
-## 二、核心理念（Philosophy）
-
-1. **通用 / 解耦**：不与任何项目绑定。所有项目结构、语言、触发方式、治理规则都在 `config.yaml` 里，代码零硬编码。换个项目只改配置。
-2. **确定性优先**：内置甄别 + 内置提取（AST / 正则）是主路径；AI 提取只作兜底升级。可复现、零幻觉、断网可跑。
-3. **归因双轨（§12）**：`@domain` 显式键 ‖ 向量隐式轨（软归属）平等裁决。**domain 永不因缺手写标注而全空**——真实项目没写 `@domain` 时，用目录树 scope 作稳定归属 + 向量隐式轨产出软分布。
-4. **三件套 + 三通道（§13.4）**：`向量 + 注释(@domain) + 注释文本(docstring)` 成对并列；检索返回 `annotation_hits / annotation_text_hits / vector_hits` **三通道并列、互不为主、不预融合**，交 Agent 自己裁决。向量方向与文本注释方向地位平等。
-5. **git 式 catalog**：每次重算 = 一次提交（强制 `change_reason`、可回滚、`active`=已发布版），兜住「代码改了但 catalog 没跟上」的漂移窗口。
-6. **读 = Skill（零写）/ 写 = MCP（git 式提交）**：双通道物理分离，读侧绝不污染源真相。
-7. **零人治理**：写侧质量门禁、触发分权、外部探针自动判 + 异构 jury + 行为金丝雀、宪法 AI 自举。
-8. **嵌入可插拔、分三档**：
-   - **offline** — 本地确定性哈希（词袋向量），纯标准库、零依赖、零成本、可复现。最低兜底档。
-   - **siliconflow** — BAAI/bge-m3 语义向量，经硅基流动 API（当前**免费、不限次、不限速**），1024 维真语义。**当前默认**。
-   - **local** — 本地向量模型（sentence-transformers / Ollama / llama.cpp），真语义 + 数据不出本机 + 断网可用；在 10 核 GPU 的 M 系列本机上比云端更快。未来可选档。
-
-## 三、设计过程（How we got here）
-
-这段是真实演进记录，不是凭空设计。
-
-**起点**：先有设计稿（`docs/design.md`），Phase 1–6 全部实现——输入 / 甄别 / 提取 / 归因 / 渲染 / 索引 / 接入 / 治理八条主线落地。但「实现完成」不等于「对」。
-
-**第一轮追问（用户的三个问题）**
-- **Q1**：Catalog 有指回原文件的路径吗？→ 确认有：`source_ref = relative_path:line_number`，检索命中精确映射到真实文件行。
-- **Q2**：抽取是代码级匹配，会不会漏掉未声明的函数、不建模函数间的协同关系？→ 诚实承认：提取是 AST + 正则的**单符号视角**，只记父 class，**不建模跨函数调用 / 协同关系**。列为待办（关系抽取层）。
-- **Q3**：MD 文件只读了前 200 字，但 MD 可能是关于代码的完整叙事，应该**全量搜索 + 加注释**。→ 重写 `plaintext.py`：module / section 的 `content` = 全文，新增 `comment` 符号（fenced 代码注释 + HTML 注释）。hermes 端到端 10502 → 10512 符号；中文语义查询现能命中设计稿 §12 / §13.7 章节。
-
-**第二轮（向量通道的软肋）**：默认 embedder 是离线哈希（词袋向量），对中文 / 语义查询返回噪声——实测「把 session 状态持久化写入数据库」的 top1 是个空 docstring、score 1.0 的符号。给出四个选项（A 两阶段 / B 全量 bge-m3 索引 / C 查询时 bge-m3 重排 / D 维持现状），落地了 **C**：corpus 仍用离线哈希召回 top-20，查询时只对候选用 bge-m3 重排。验证：32/32 单测通过，噪声被压制。
-
-**第三轮（provider 演进的关键转折）**：用户告知 **硅基流动 BAAI/bge-m3 免费、不限次、不限速**。这直接推翻了 C 优于 B 的唯一理由（成本）。于是：
-- 重新评估：B 的缺点（建索引烧 API、每次重建重烧）因「免费不限速」而消失，只剩结构性依赖（要 key / 网络）。
-- 决策：默认档切 **全量 bge-m3 索引**（`embedding.provider=siliconflow`）+ 隐式轨同步语义化（`attribution.provider=siliconflow`），`rerank` 关闭（corpus 已是真语义，重排冗余）；offline 降级为断网 / 零配置兜底。
-- 顺带红利：§12 隐式轨软归因也因真语义变准（「这个函数语义上属于 database 域」而不只是看有没有标注）。
-- 验证：单元 27/27 通过（代码默认仍 `offline` 保零配置即跑）；实时联调 `get_embedder(siliconflow)` 真实返回 1024 维向量。
-
-**第四轮（本地模型的彩蛋）**：用户补充——M5 Air 10 核 GPU、本地跑 9B 都不烫、本地向量比云端快。于是把「本地向量模型」定为第三档（Tier1）：真语义 + 数据不出本机 + 断网可用，且在该机器上更快。架构已支持（加个 `LocalEmbedder` provider 即可），本轮先只落地云端档，本地档留作后续。
-
-## 四、架构速览
+## 模块映射（Phase → 代码）
 
 | Phase | 主线 | 模块 |
 |---|---|---|
 | 1 | 输入与源真相 | `config`, `triage`, `extract/*`, `pipeline` |
-| 2 | 归因与分类 | `attribution`（§12 双轨裁决 + 软分布） |
-| 2 | catalog 版本化 | `store`（增量重算 + git 式提交 + 漂移兜底 + 回滚） |
-| 3 | 渲染 | `render`（MkDocs 源 + llms.txt 分片） |
-| 4 | 索引 | `index`（三件套 + 向量近邻 + 三通道并列检索） |
+| 2 | 归因与分类 | `attribution`（§12 双轨裁决 + 软分布 + §12.7 快照：domain 永不为空） |
+| 2 | catalog 版本化 | `store`（增量重算 + git 式提交 + 漂移兜底 + 回滚 + TTL 巡检） |
+| 3 | 渲染 | `render`（MkDocs 源 + llms.txt 按域分片 + 可选产物 config 开关） |
+| 4 | 索引 | `index`（三件套 + 向量近邻 + 三通道并列检索 + 近邻候选池近似） |
 | 5 | 接入协议 | `access/skill`, `access/write_channel`(MCP), `access/agents_md`, `access/onboarding` |
-| 6 | 治理 | `governance/*`（gate / trigger / observability / bootstrap） |
+| 6 | 治理 | `governance/gate`, `governance/trigger`, `governance/observability`, `governance/bootstrap` |
 
-## 五、快速开始
+## 快速开始
 
 ```bash
+# 准备环境（managed venv + PyYAML）
 python -m venv .venv && .venv/bin/pip install pyyaml
 export PYTHONPATH=src
 
@@ -68,26 +38,71 @@ export PYTHONPATH=src
 python -m doc_system.cli ingest --config config.example.yaml --out catalog.snapshot.json
 
 # 2) 初始化 git 式 catalog 存储 + 首次重算提交
-python -m doc_system.cli store-init --config config.example.yaml --store .docstore
+python -m doc_system.cli store-init --config config.example.yaml
+python -m doc_system.cli recompute --config config.example.yaml --reason "init catalog v1"
 
-# 3) 建索引（默认 offline；要真语义把 provider 改成 siliconflow，见 docs/deployment.yaml）
-python -m doc_system.cli index --config config.example.yaml --store .docstore --out index.json
+# 3) CI 发布（门禁过则原子切 active；唯一发布权）
+python -m doc_system.cli ci-publish --config config.example.yaml --reason "release v1"
 
-# 4) 检索（三通道并列返回）
-python -m doc_system.cli retrieve --config config.example.yaml --store .docstore --query "把 session 状态持久化写入数据库"
+# 4) 渲染（MkDocs 源 + llms.txt 分片）+ 索引
+python -m doc_system.cli render --config config.example.yaml --out .doc_system
+python -m doc_system.cli index --out .doc_system/index/index.json          # 默认离线哈希向量
+# 用真实语义向量（BAAI/bge-m3 · 硅基流动）：
+python -m doc_system.cli index --provider siliconflow --out .doc_system/index/index.json
+python -m doc_system.cli retrieve --provider siliconflow --query "用户账户与登录" --k 3
+
+# 5) 读侧产物（零写）
+python -m doc_system.cli gen-skill --out .doc_system
+python -m doc_system.cli gen-agents-md --out .doc_system
+python -m doc_system.cli onboard --out .doc_system
+
+# 6) 治理
+python -m doc_system.cli gate
+python -m doc_system.cli probe --config config.example.yaml
+python -m doc_system.cli jury --question "is the KB helpful?"
+python -m doc_system.cli bootstrap --agents-md fixtures/sample_project/AGENTS.md --out .doc_system/constitution.json
+
+# 漂移兜底
+python -m doc_system.cli drift --config config.example.yaml
+python -m doc_system.cli reconcile --config config.example.yaml   # 构建候选版本（不发布）
+python -m doc_system.cli rollback --version v1                    # 回滚 active
 ```
 
-## 六、文档索引
+## 测试
 
-- `docs/design.md` — 完整设计稿（八主线 + §12 归因双轨 + §13.4 三通道）
-- `docs/system-readme.md` — 技术 README（模块映射、命令参考）
-- `docs/quickref.md` — 一页速查（进度 / 术语 / 主路线 / 待拍板）
-- `docs/test_report.md` — 端到端测试报告（含向量通道四选项对比、MD 全量抽取复测）
-- `docs/deployment.yaml` — 真实部署配置（硅基流动 bge-m3 默认 + rerank 关闭）
-- `config.example.yaml` — 配置样例（三档 provider 文档化）
+```bash
+PYTHONPATH=src python -m unittest discover -s tests   # 30 个用例覆盖 Phase 1~6 + 归因双轨 + 三通道 + files_only root（含 bge-m3 mock，不依赖网络）
+```
 
-## 七、待推进（设计上已留口、尚未实现）
+## roots 扫描范围（配置驱动）
 
-1. **关系抽取层**：跨函数调用图 / 多函数共作用于一模块（回应 Q2）—— §13.4 之外的新能力，非小修补。
-2. **本地模型档（Tier1）**：`LocalEmbedder` provider，sentence-transformers / Ollama / llama.cpp 任选；数据不出本机、断网可用、在 M 系列本机更快。
-3. **corpus 全量 bge-m3 快照缓存**：建索引走网络时落快照，减少重建时的重复 API 调用。
+- root 两种写法：`- path: <dir>` 递归扫描（默认）；`- path: <dir>` + `files_only: true` **只扫该目录顶层文件、不递归**。
+  后者用于纳入**项目根级核心代码**（`cli.py`、`hermes_state.py`、`run_agent.py` 这类大而关键的入口文件），
+  又不会把同目录下的巨型子目录（如 114M 的 context_system/）一并拖入扫描。
+- 大文件性能：Python 提取器对 `ast.get_source_segment` 做了整篇只切一次的 O(行数) 优化 +
+  一次建父映射（判 method/function 从 O(n²) 降到 O(n)）。实测 846K 的 `cli.py` 提取 **2.58s → 0.17s**（约 15×），符号数不变。
+
+## 向量通道（三件套之一，可插拔）
+
+`index.get_embedder(cfg)` 按 `config.yaml` 的 `embedding.provider` 选择（也可 CLI `--provider` 覆盖）：
+
+| provider | 实现 | 维度 | 依赖 | 适用 |
+|---|---|---|---|---|
+| `offline`（默认） | `OfflineEmbedder` 确定性哈希 | 256 | 零 | 离线/CI/无 key、可复现 |
+| `siliconflow` | `SiliconFlowEmbedder` · BAAI/bge-m3 | 1024 | 硅基流动 API | 真实语义检索、跨语言中英同义 |
+
+- 具备语义能力：跨语言同义对余弦约 0.81~0.87，无关对约 0.44（离线哈希向量恒为 0，无法区分）。
+- **API key 不入库**：从环境变量 `SILICONFLOW_API_KEY` 或项目根 `.env` 读取（`.env` 已被 `.gitignore` 排除）；`config.yaml` 只放 `model/api_base/api_key_env/batch_size`，不放明文 key。
+- 批量 embedding：`embed_many(texts)` 按 `batch_size` 分组请求，按返回 `data[].index` 还原顺序；失败抛清晰 `RuntimeError`。
+- 新 provider 只需继承 `index.Embedder` 实现 `embed_many` + 声明 `dim`，并在 `get_embedder` 注册；`KnowledgeIndex` / `retrieve` 完全不改。
+
+## 已知边界（诚实声明）
+
+- 真实语义向量已接入且实测可用（硅基流动 BAAI/bge-m3）；默认仍 `offline`（零依赖、可复现），启用语义向量需联网 + 有效 key。向量只影响向量通道近邻质量，三通道并列返回结构不变。
+- 归因隐式轨默认 `offline` 确定性哈希向量（软分布语义较弱，但零成本、可复现）；`attribution.provider=siliconflow` 可升级为真语义软归属。`attribution.domain_from` 默认 `structural`（目录树 scope，稳定可复现），可切 `vector`（向量 top 域，语义强但随模型漂移）。二者都是并列信号，不预融合。
+- 域骨架取目录树 scope（§13.4 Q5），是**结构域**而非纯语义能力域；跨域语义重叠靠 `domain_distribution` 软分布揭示，交 Agent 判断。
+- MCP 写通道提供确定性的 `WriteChannel` 核心 + MCP 工具 schema；真实 `mcp` 包环境下的 stdio 服务由 `build_mcp_server()` 启用，离线时 CLI/CI 直接调用核心。
+- TypeScript 提取器为占位（`typescript_typedoc`），新语言按 `extract/` 适配器契约扩展即可。
+- MkDocs / PageFind / TypeDoc 站等附加产物走 config 开关（默认关），离线不构建、由 CI/人工启用。
+
+设计稿：`docs/design/agent-onboarding-doc-system-design.md`（本仓库仅存放实现；设计稿独立演进）。

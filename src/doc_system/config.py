@@ -31,6 +31,7 @@ class EmbeddingConfig:
     api_base: str = "https://api.siliconflow.cn/v1/embeddings"
     api_key_env: str = "SILICONFLOW_API_KEY"
     batch_size: int = 32
+    max_concurrency: int = 8   # 并行发送的 batch 数（硅基流动免费不限速 → 并发纯收益；1=串行）
 
 
 @dataclass
@@ -77,6 +78,7 @@ class Config:
     embedding: EmbeddingConfig = None  # 向量通道 provider 配置
     attribution: AttributionConfig = None  # §12 归因双轨配置
     retrieval: RetrievalConfig = None  # §13.4 检索增强（选项 C · 查询时重排）
+    ann_provider: str = "flat"  # 向量检索后端：flat(暴力余弦,默认/零依赖) | hnsw(hnswlib 近似最近邻)
     index_neighbor_pool: int = 0  # 近邻候选池上限（0=精确全量 O(n²)；大项目设 >0 启用采样近似 O(n·pool)）
     root_files_only: set = None  # 声明 files_only:true 的 root：只扫顶层文件、不递归（纳入根级核心代码而不拖入巨型子目录）
 
@@ -121,5 +123,6 @@ class Config:
             embedding=EmbeddingConfig(**raw.get("embedding", {})),
             attribution=AttributionConfig(**raw.get("attribution", {})),
             retrieval=RetrievalConfig(**(raw.get("retrieval", {}) or {})),
+            ann_provider=str(raw.get("ann_provider", "flat") or "flat"),
             index_neighbor_pool=int((raw.get("index", {}) or {}).get("neighbor_pool", 0)),
         )

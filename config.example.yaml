@@ -55,7 +55,8 @@ embedding:
   model: "BAAI/bge-m3"
   api_base: "https://api.siliconflow.cn/v1/embeddings"
   api_key_env: "SILICONFLOW_API_KEY"
-  batch_size: 32
+  batch_size: 32            # 单次 HTTP 请求内打包的文本条数（减请求数）
+  max_concurrency: 8        # 并行发送的 batch 数；硅基流动免费不限速 → 并发纯收益；1=串行
 
 # §12 归因双轨：domain 不只靠手写 @domain。真实项目没有显式键时，
 # 用目录树 scope 作稳定归属 + 向量隐式轨自动产出软归属分布，domain 永不为空。

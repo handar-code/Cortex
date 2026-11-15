@@ -21,6 +21,7 @@ import re
 import urllib.request
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+import concurrent.futures as _futures
 
 from .config import EmbeddingConfig
 from .model import Catalog, Symbol
@@ -78,6 +79,8 @@ class SiliconFlowEmbedder(Embedder):
     """BAAI/bge-m3 语义向量，经硅基流动 Embedding API。
 
     API key 从环境变量 / 项目根 .env 读取（见 Config._load_local_env），绝不写进源码。
+    支持并发：多个 batch 经 ThreadPoolExecutor 并行发送（默认 8 路），大幅缩短全量建档耗时。
+    硅基流动当前免费、不限次、不限速 → 并发是纯收益（无限速顾虑）。
     """
 
     def __init__(
@@ -87,6 +90,7 @@ class SiliconFlowEmbedder(Embedder):
         api_base: str = "https://api.siliconflow.cn/v1/embeddings",
         api_key_env: str = "SILICONFLOW_API_KEY",
         batch_size: int = 32,
+        max_concurrency: int = 8,
     ):
         self.api_key = api_key or os.environ.get(api_key_env)
         if not self.api_key:
@@ -98,33 +102,52 @@ class SiliconFlowEmbedder(Embedder):
         self.api_base = api_base
         self.api_key_env = api_key_env
         self.batch_size = batch_size
+        self.max_concurrency = max(1, int(max_concurrency))
         self.dim = 1024  # BAAI/bge-m3 输出维度
 
+    def _embed_batch(self, batch: list[str]) -> list[list[float]]:
+        body = json.dumps(
+            {"model": self.model, "input": batch, "encoding_format": "float"}
+        ).encode("utf-8")
+        req = urllib.request.Request(
+            self.api_base,
+            data=body,
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            },
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+        except Exception as e:  # noqa: BLE001
+            raise RuntimeError(
+                f"硅基流动 Embedding 调用失败（model={self.model}）：{e}"
+            ) from e
+        vecs = {d["index"]: d["embedding"] for d in data.get("data", [])}
+        return [vecs[j] for j in range(len(batch))]
+
     def embed_many(self, texts: list[str]) -> list[list[float]]:
-        out: list[list[float]] = []
-        for i in range(0, len(texts), self.batch_size):
-            batch = texts[i : i + self.batch_size]
-            body = json.dumps(
-                {"model": self.model, "input": batch, "encoding_format": "float"}
-            ).encode("utf-8")
-            req = urllib.request.Request(
-                self.api_base,
-                data=body,
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json",
-                },
-            )
-            try:
-                with urllib.request.urlopen(req, timeout=60) as resp:
-                    data = json.loads(resp.read().decode("utf-8"))
-            except Exception as e:  # noqa: BLE001
-                raise RuntimeError(
-                    f"硅基流动 Embedding 调用失败（model={self.model}）：{e}"
-                ) from e
-            vecs = {d["index"]: d["embedding"] for d in data.get("data", [])}
-            out.extend(vecs[j] for j in range(len(batch)))
-        return out
+        batches = [
+            texts[i : i + self.batch_size]
+            for i in range(0, len(texts), self.batch_size)
+        ]
+        if not batches:
+            return []
+        # 单 batch 或并发=1 → 串行（保持原行为，便于单测/排错）
+        if len(batches) == 1 or self.max_concurrency <= 1:
+            return [v for b in batches for v in self._embed_batch(b)]
+        # 多 batch → 并发发送，结果与输入顺序一致（按 batch 下标归位）
+        results: list[list[list[float]] | None] = [None] * len(batches)
+        with _futures.ThreadPoolExecutor(
+            max_workers=self.max_concurrency
+        ) as ex:
+            fut_to_idx = {
+                ex.submit(self._embed_batch, b): i for i, b in enumerate(batches)
+            }
+            for fut in _futures.as_completed(fut_to_idx):
+                results[fut_to_idx[fut]] = fut.result()
+        return [v for b in results for v in b]
 
 
 def get_embedder(cfg: EmbeddingConfig | None) -> Embedder:
@@ -135,6 +158,7 @@ def get_embedder(cfg: EmbeddingConfig | None) -> Embedder:
             api_base=cfg.api_base,
             api_key_env=cfg.api_key_env,
             batch_size=cfg.batch_size,
+            max_concurrency=cfg.max_concurrency,
         )
     if cfg.provider != "offline":
         raise ValueError(f"未知 embedding provider: {cfg.provider!r}")
@@ -143,6 +167,149 @@ def get_embedder(cfg: EmbeddingConfig | None) -> Embedder:
 
 def _cosine(a: list[float], b: list[float]) -> float:
     return sum(x * y for x, y in zip(a, b))
+
+
+# ---------- 向量检索后端（可插拔 ANN）----------
+# 设计：KnowledgeIndex 的「向量通道 top-k 检索」抽象为 VectorBackend。
+# - FlatBackend：暴力余弦全扫，零依赖、确定可复现（默认，保证现有测试不回归）。
+# - HnswBackend：hnswlib 近似最近邻（cosine 空间），大数据集检索从 O(n) 全扫降到
+#   近似对数级；import 放内部 try/except，缺失时给出清晰的「先 pip install」提示。
+# 基类约定：build(vectors) 接收 list[list[float]]（与 entries 同序）；
+#          query(vec, k) -> list[(score, entry_index)]，score 越大越近（余弦/1-距离）。
+
+class VectorBackend:
+    """向量检索后端基类。"""
+
+    def build(self, vectors: list[list[float]]) -> None:
+        raise NotImplementedError
+
+    def query(self, vec: list[float], k: int) -> list[tuple[float, int]]:
+        raise NotImplementedError
+
+    def save_index(self, path: str | Path) -> None:
+        """落盘索引（跨进程持久）。默认 no-op：flat 暴力后端无需持久化。"""
+        return None
+
+    def load_index(self, path: str | Path, n: int) -> None:
+        """从磁盘加载索引。默认 no-op：flat 暴力后端无需持久化。"""
+        return None
+
+
+class FlatBackend(VectorBackend):
+    """暴力余弦全扫（默认后端，零依赖、确定可复现）。"""
+
+    def __init__(self, dim: int | None = None):
+        self.dim = dim
+        self._vectors: list[list[float]] = []
+
+    def build(self, vectors: list[list[float]]) -> None:
+        self._vectors = vectors
+
+    def query(self, vec: list[float], k: int) -> list[tuple[float, int]]:
+        n = len(self._vectors)
+        if n == 0 or k <= 0:
+            return []
+        scored = [
+            (_cosine(vec, v), i) for i, v in enumerate(self._vectors)
+        ]
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return scored[: min(k, n)]
+
+
+class HnswBackend(VectorBackend):
+    """hnswlib 近似最近邻后端（cosine 空间）。
+
+    import 放在内部 try/except：未安装时 __init__ 抛清晰错误，提示先
+    pip install hnswlib，而不是把 import 失败泄漏到 flat 默认路径（保证零依赖回退）。
+    """
+
+    def __init__(self, dim: int):
+        try:
+            from hnswlib import Index as _HnswIndex
+        except ImportError as e:  # noqa: BLE001
+            raise RuntimeError(
+                "缺少 hnswlib 依赖：启用 ann_provider='hnsw' 前请先执行 "
+                "`pip install hnswlib`"
+            ) from e
+        if dim is None or dim <= 0:
+            raise ValueError(f"HnswBackend 需要合法的维度 dim，收到: {dim!r}")
+        self._HnswIndex = _HnswIndex
+        self.dim = dim
+        self._index = None
+        self._n = 0
+
+    def build(self, vectors: list[list[float]]) -> None:
+        import numpy as np
+
+        n = len(vectors)
+        self._n = n
+        idx = self._HnswIndex("cosine", dim=self.dim)
+        idx.init_index(
+            max_elements=max(n, 1),
+            ef_construction=200,
+            M=16,
+        )
+        if n:
+            idx.add_items(
+                np.array(vectors, dtype="float32"),
+                ids=list(range(n)),
+            )
+        # 查询时的候选广度：取较大值以确保召回（近似最近邻的 ef 需 >= k）。
+        idx.set_ef(max(50, n))
+        self._index = idx
+
+    def save_index(self, path: str | Path) -> None:
+        """落盘 hnswlib 索引（跨进程持久）：下次检索可直接 load_index 而非回退暴力。
+
+        要求 self._index 已 build（非 None）。hnswlib 原生 save_index 写入单文件，
+        内含图结构与向量，load 时须传入一致的 max_elements。
+        """
+        if self._index is None:
+            raise RuntimeError("HnswBackend.save_index：索引尚未 build，无法落盘。")
+        self._index.save_index(str(path))
+
+    def load_index(self, path: str | Path, n: int) -> None:
+        """从磁盘加载 hnswlib 索引，恢复 self._index 与 self._n（跨进程复用，零 rebuild）。
+
+        n 必须等于构建时的元素数（= max_elements），用于 load_index 的容量上限；
+        set_ef 取较大值以保证召回（ef 需 >= 查询 k）。
+        """
+        idx = self._HnswIndex("cosine", dim=self.dim)
+        idx.load_index(str(path), max_elements=n)
+        idx.set_ef(max(50, n))
+        self._index = idx
+        self._n = n
+
+    def query(self, vec: list[float], k: int) -> list[tuple[float, int]]:
+        if self._index is None or self._n == 0 or k <= 0:
+            return []
+        import numpy as np
+
+        kk = min(k, self._n)
+        labels, distances = self._index.knn_query(
+            np.array(vec, dtype="float32"), k=kk
+        )
+        labels = labels[0]
+        distances = distances[0]
+        # hnswlib cosine 距离 ∈ [0, 2]，score = 1 - distance 即余弦相似度，与 FlatBackend 同口径。
+        return [
+            (1.0 - float(d), int(l)) for d, l in zip(distances, labels)
+        ]
+
+
+def _make_backend(ann_provider: str, dim: int) -> VectorBackend:
+    """按 ann_provider 选择向量检索后端。未知值回退 flat（保证零依赖兜底）。"""
+    if ann_provider == "hnsw":
+        return HnswBackend(dim)
+    if ann_provider not in ("flat", None):
+        # 未知 provider 不静默失败，但也不阻断；回退 flat 并保留可观测性。
+        import warnings
+
+        warnings.warn(
+            f"未知 ann_provider={ann_provider!r}，回退为 flat（暴力余弦）。",
+            stacklevel=2,
+        )
+    return FlatBackend(dim)
 
 
 @dataclass
@@ -184,10 +351,12 @@ class KnowledgeIndex:
         embedder: Embedder | None = None,
         neighbor_k: int = 3,
         neighbor_pool: int = 0,
+        ann_provider: str = "flat",
     ):
         self.catalog = catalog
         self.embedder = embedder or OfflineEmbedder()
         self.dim = self.embedder.dim
+        self.ann_provider = ann_provider
         self.neighbor_approx = False  # 是否启用了候选池近似（供报告/探针用）
         self.entries: list[IndexEntry] = []
         # 1) 构建向量 + 标注（批量 embedding，减少 API 往返）
@@ -202,6 +371,10 @@ class KnowledgeIndex:
         self._compute_neighbors(neighbor_k, neighbor_pool)
         # 3) 冲突标记：文件内 module 域 vs 成员域不一致
         self._compute_conflicts()
+        # 4) 构建可插拔 ANN 检索后端（flat 默认零依赖 / hnsw 可选近似最近邻）
+        #    与 entries 同序的 vectors 喂给后端，retrieve 的向量通道改走 backend.query。
+        self.backend = _make_backend(self.ann_provider, self.dim)
+        self.backend.build(vectors)
 
     def _compute_neighbors(self, k: int, pool: int = 0) -> None:
         """计算每个符号的 k 个向量近邻。
@@ -281,18 +454,19 @@ class KnowledgeIndex:
         q_tokens = set(t.lower() for t in re.findall(r"[@]?([a-zA-Z_][\w./\-]*)", query))
 
         # 通道 A · 向量方向：语义 top-k（Embedding 相似度）
+        #   走可插拔 ANN 后端（flat 暴力余弦 / hnsw 近似最近邻），对外返回结构不变。
+        #   后端 query 返回 list[(score, entry_index)]，与 entries 同序；score 越大越近。
         qvec = self.embedder.embed(query)
-        scored = sorted(
-            ((_cosine(qvec, e.vector), e) for e in self.entries),
-            key=lambda x: x[0],
-            reverse=True,
-        )
-        # 选项 C · 查询时 bge-m3 重排：用真语义向量对「候选池」重新排序，覆盖 offline 哈希噪声。
-        # 先取较大候选池（给重排留空间），再用 bge-m3 重算相似度挑前 k——零额外离线成本，
-        # 仅按次 API 计费，质量接近真语义索引（推荐解，详见 TEST_REPORT §11）。
+        # 需要召回的候选数：开启查询重排(选项 C)时取较大的候选池，供真语义重排挑选。
+        ann_k = max(k, rerank_candidates) if rerank_provider else k
+        raw_hits = self.backend.query(qvec, ann_k)
         if rerank_provider:
-            cand = [e for _, e in scored[: max(k, rerank_candidates)]]
-            scored = self._semantic_rerank(query, cand, rerank_provider)
+            # 选项 C · 查询时 bge-m3 重排：用真语义向量对「候选池」重新排序，覆盖 offline 哈希噪声。
+            # 先用后端召回候选（最多 max(k, rerank_candidates) 个），再用 bge-m3 重算相似度挑前 k。
+            cand_entries = [self.entries[i] for _, i in raw_hits]
+            scored = self._semantic_rerank(query, cand_entries, rerank_provider)
+        else:
+            scored = [(sc, self.entries[i]) for sc, i in raw_hits]
         vector_hits = [
             e.to_payload(include_vector) | {"score": round(sc, 4)}
             for sc, e in scored[:k]
@@ -344,13 +518,113 @@ class KnowledgeIndex:
         }
 
     def save(self, path: str | Path) -> None:
-        """把索引（含三件套 payload）落盘，供 Agent 直接读取。"""
+        """把索引（含三件套 payload）落盘，供 Agent 直接读取。
+
+        若启用 ann_provider="hnsw" 且后端已 build，则额外把 hnswlib 索引落盘到
+        同目录的 `<stem>.hnsw`，并写 `<stem>.meta.json` 记录维度与条目数，
+        使下次检索可 `KnowledgeIndex.load(ann_provider="hnsw")` 直接加载、跨进程持久。
+        """
         payload = [e.to_payload(True) for e in self.entries]
         p = Path(path)
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(
             json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
         )
+        # 跨进程持久化：hnsw 索引与 meta
+        if (
+            self.ann_provider == "hnsw"
+            and isinstance(self.backend, HnswBackend)
+            and self.backend._index is not None
+        ):
+            hnsw_path = p.parent / (p.stem + ".hnsw")
+            meta_path = p.parent / (p.stem + ".meta.json")
+            self.backend.save_index(hnsw_path)
+            meta_path.write_text(
+                json.dumps(
+                    {
+                        "ann_provider": "hnsw",
+                        "dim": self.dim,
+                        "n": len(self.entries),
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+
+    @classmethod
+    def load(
+        cls,
+        path: str | Path,
+        ann_provider: str = "flat",
+        embedder: Embedder | None = None,
+    ) -> "KnowledgeIndex":
+        """从已落盘的 index.json 恢复 KnowledgeIndex（跨进程复用，无需重新 embedding）。
+
+        与 __init__ 不同，本方法不依赖 embedder 重建向量——vectors 已内嵌在 entries 里；
+        仅 retrieve() 的查询向量嵌入需要 embedder（默认 OfflineEmbedder，dim 由向量推断）。
+        - ann_provider="hnsw" 且对应 `<stem>.hnsw` 存在 → backend.load_index（零 rebuild，真正持久）；
+          否则 backend.build(vectors)（内存重建，进程结束不持久，但功能可用）。
+        - ann_provider="flat" → 暴力余弦，直接 build。
+        返回的实例 retrieve() 立即可用（向量通道走 backend.query）。
+        """
+        p = Path(path)
+        data = json.loads(p.read_text(encoding="utf-8"))
+        entries: list[IndexEntry] = []
+        vectors: list[list[float] | None] = []
+        for d in data:
+            sym = Symbol(
+                **{k: v for k, v in d.items() if k in _SYMBOL_FIELDS}
+            )
+            vec = d.get("vector")
+            neighbors = d.get("vector_neighbors", []) or []
+            cflag = bool(d.get("conflict_flag", False))
+            e = IndexEntry(
+                symbol=sym,
+                vector=vec,
+                annotation_neighbors=neighbors,
+                conflict_flag=cflag,
+            )
+            entries.append(e)
+            vectors.append(vec)
+
+        # 维度：优先 embedder（retrieve 查询嵌入需与之对齐），否则从首个有效向量推断。
+        dim = embedder.dim if embedder is not None else None
+        if dim is None:
+            for v in vectors:
+                if v:
+                    dim = len(v)
+                    break
+        if dim is None:
+            raise RuntimeError("KnowledgeIndex.load：无可用向量，无法确定维度。")
+
+        self = cls.__new__(cls)
+        self.catalog = None  # load 路径不持有 catalog（retrieve 不依赖）
+        self.embedder = embedder or OfflineEmbedder()
+        self.dim = dim
+        self.ann_provider = ann_provider
+        self.neighbor_approx = False
+        self.entries = entries
+        self.backend = _make_backend(ann_provider, dim)
+
+        n = sum(1 for v in vectors if v)
+        if ann_provider == "hnsw":
+            hnsw_path = p.parent / (p.stem + ".hnsw")
+            if hnsw_path.exists() and n > 0:
+                # 跨进程持久：直接加载落盘索引，不 rebuild（零 API / 零重算）
+                self.backend.load_index(hnsw_path, n)
+            else:
+                # 无落盘索引：内存重建（进程结束不持久，但检索可用）
+                self.backend.build([v for v in vectors if v])
+        else:
+            if n > 0:
+                self.backend.build([v for v in vectors if v])
+        return self
+
+
+# Symbol 的全部数据字段名：用于从 index.json payload 反序列化时过滤掉
+# 索引层附加字段（vector / vector_neighbors / conflict_flag 合并值 / conflict_sources）。
+_SYMBOL_FIELDS = set(Symbol.__dataclass_fields__.keys())
 
 
 def build_index(
@@ -359,9 +633,14 @@ def build_index(
     out_path: str | Path | None = None,
     k: int = 3,
     neighbor_pool: int = 0,
+    ann_provider: str = "flat",
 ) -> KnowledgeIndex:
     idx = KnowledgeIndex(
-        catalog, embedder=embedder, neighbor_k=k, neighbor_pool=neighbor_pool
+        catalog,
+        embedder=embedder,
+        neighbor_k=k,
+        neighbor_pool=neighbor_pool,
+        ann_provider=ann_provider,
     )
     if out_path is not None:
         idx.save(out_path)
