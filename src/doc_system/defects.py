@@ -57,6 +57,7 @@ class ScanReport:
     files_scanned: int = 0
     files_failed: int = 0         # 解析失败的 .py 文件数
     symbols_checked: int = 0
+    dynamic_skipped: int = 0       # 因目标模块有 __getattr__ 动态导出而跳过判定的导入数
 
     @property
     def passed(self) -> bool:
@@ -68,6 +69,7 @@ class ScanReport:
             "files_scanned": self.files_scanned,
             "files_failed": self.files_failed,
             "symbols_checked": self.symbols_checked,
+            "dynamic_skipped": self.dynamic_skipped,
             "defects": [d.to_dict() for d in self.defects],
         }
 
@@ -245,6 +247,20 @@ def _module_name_for(path: Path, root: Path) -> str | None:
     return ".".join(p for p in parts if p)
 
 
+def _has_dynamic_getattr(tree: ast.AST) -> bool:
+    """模块是否用 PEP 562 的模块级 ``__getattr__`` 动态导出符号。
+
+    这类模块（例：Hermes 的 tools/skills_hub.py 用 ``_LAZY_EXPORTS`` +
+    ``def __getattr__(name)`` 重导出 SKILLS_DIR / HUB_DIR 等 legacy 名字）
+    的符号在 AST 里根本不存在，但运行时能取到。静态扫描若不识别，
+    会把合法的 `from X import Y` 误报成 ImportError。
+    """
+    for node in tree.body if isinstance(tree, ast.Module) else []:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "__getattr__":
+            return True
+    return False
+
+
 def _exported_symbols(tree: ast.AST) -> set[str]:
     """模块对外暴露的符号集合。
 
@@ -273,6 +289,15 @@ def _exported_symbols(tree: ast.AST) -> set[str]:
                     symbols.add(target.id)
         elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
             symbols.add(node.target.id)
+        elif isinstance(node, ast.Assign) and isinstance(node.value, ast.Dict):
+            # 模块级 dict 字面量（如 _LAZY_EXPORTS = {"SKILLS_DIR": ...}）
+            # 的字符串键，配合 __getattr__ 就是动态导出表。
+            for key in node.value.keys:
+                if isinstance(key, ast.Constant) and isinstance(key.value, str):
+                    symbols.add(key.value)
+    if _has_dynamic_getattr(tree):
+        # 哨兵：让调用方知道该模块有动态导出，不能静态断言"符号缺失"
+        symbols.add("__DYNAMIC_GETATTR__")
     return symbols
 
 
@@ -422,6 +447,11 @@ def check_import_contract(root: str | Path) -> ScanReport:
                     continue
 
             available = module_symbols[target_mod]
+            if "__DYNAMIC_GETATTR__" in available:
+                # 该模块用 __getattr__ 动态解析符号，静态无法确定它提供什么
+                # → 不误报，但计数以便报告"跳过了多少条无法静态判定的导入"
+                report.dynamic_skipped += len([a for a in node.names if a.name != "*"])
+                continue
             for alias in node.names:
                 if alias.name == "*":
                     continue
