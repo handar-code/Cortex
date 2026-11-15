@@ -1,7 +1,12 @@
 # RELEASING.md — 发布安全清单
 
-本清单用于 Cortex 文档系统（通用项目知识库）发布前的安全与一致性核查。
+本清单用于 Cortex 文档系统（pip 包 `doc-system`，命令 `cortex`）发布前的安全与一致性核查。
 **每次发布前必须逐条确认，任何一项未通过都不得发布。**
+
+> **仓库口径（单仓）**：唯一权威仓是 `<REPO_ROOT>`。
+> `<REPO_ROOT>` 是早期的「干净发布镜像」，`<CORTEX_PRIVATE_DIR>`
+> 是含真实密钥的本地运行副本——**两者均已归档，不再维护、不再双写、不作为发布源**。
+> 详见两仓根目录的 `ARCHIVED.md`。收敛的目的：消除多仓并行维护导致的源码漂移。
 
 ---
 
@@ -10,78 +15,92 @@
 > ⚠️ 这是发布流程中优先级最高、最不可妥协的一条。
 
 - `cortex-private` 仓库中保存着**真实**的 `SILICONFLOW_API_KEY`，且该密钥**已经写入 git 历史**。
-- **永不**将 `cortex-private` 的内容原样 `push` 到任何公开仓库。
-- 如果曾经把 `cortex-private` 的内容（哪怕是部分）误合并到 `cortex`，**必须先用 `git filter-repo` 或 BFG** 将密钥及其历史从 `cortex` 中彻底抹除，再执行发布：
+- **永不**将 `cortex-private` 的内容原样 `push` 到任何公开仓库；**永不**把该仓的 `.git` 合并进权威仓。
+- `.env` 已被权威仓 `.gitignore` 排除；`config.yaml` / `config.example.yaml` / `config.quickstart.yaml`
+  只放 `api_key_env` 字段名，不放明文 key。发布前用下面的命令复核：
 
   ```bash
-  # 使用 git-filter-repo 抹除密钥历史（示例）
-  git filter-repo --replace-text <(echo 'SILICONFLOW_API_KEY==>***REDACTED***')
-
-  # 或使用 BFG Repo-Cleaner
-  bfg --replace-text secrets.txt cortex.git
+  # 工作区与历史都不得出现明文 key（应只命中 api_key_env 这类字段名引用）
+  git grep -n -i "sk-\|SILICONFLOW_API_KEY=" -- . ':!docs/RELEASING.md' || echo "OK: 无明文 key"
+  git log -p | grep -iE "sk-[A-Za-z0-9]{20,}" && echo "!! 历史含疑似明文 key" || echo "OK: 历史干净"
   ```
 
-- 发布后用 `git log -p | grep -i siliconflow` 复核，确保历史中已无明文密钥。
+- 如果曾经把 `cortex-private` 的内容（哪怕是部分）误合并进权威仓，必须先用 `git filter-repo` 或 BFG
+  将密钥及其历史彻底抹除，再执行发布：
+
+  ```bash
+  git filter-repo --replace-text <(echo 'SILICONFLOW_API_KEY==>***REDACTED***')
+  # 或 bfg --replace-text secrets.txt repo.git
+  ```
+
 - 如密钥疑似已泄漏，立即在 SiliconFlow 后台**轮换（revoke + regenerate）**该 Key。
 
 ---
 
 ## 2. 发布源
 
-- **只发布 `cortex` 干净仓库**（已核查无密钥泄漏）。
-- **绝不**包含 `cortex-runs/` 目录：其中包含大索引文件（如 `index.json` 约 **323MB**），不应进入发布版本。
-- **绝不**包含 `.env` 文件（含本地配置与密钥）。
-- 发布产物应仅包含源码、配置示例、文档与测试，确认 `.gitignore` 已正确排除上述文件后再打 tag。
+- **只发布 `doc-system` 权威仓**（单仓）。不再有「同步到 cortex 镜像」这一步。
+- **绝不**包含 `cortex-runs/` 目录：含大索引文件（如 `index.json` 约 **323MB**）。
+- **绝不**包含 `.env` / `.docstore/` / `.doc_system/` / `catalog.snapshot.json` / `_*.json` / `__pycache__/`
+  （均已在 `.gitignore` 中排除）。
+- 发布产物应仅包含源码、配置示例、文档、测试与 CI 配置，确认 `.gitignore` 生效后再打 tag。
 
 ---
 
-## 3. 同步源码
+## 3. 源码一致性（单仓，无需跨仓同步）
 
-- 发布前必须把 `doc-system` 仓库的**最新代码**同步到 `cortex`，包括：
-  - ANN / hnsw 后端实现
-  - `rebuild_hnsw.py`
-  - `verify_hnsw_load.py`
-- `cortex` 仓库中现存的旧快照（约 **13:21** 版本）缺少上述文件；若直接基于旧快照发布，发布的将是**旧版**，缺少 ANN/hnsw 能力。
-- 同步完成后，需在 `cortex` 仓库中确认这些文件确实存在，再进入后续验证步骤。
+- 权威仓自身即为唯一源码来源，发布前确认工作区干净、无未提交改动：
+
+  ```bash
+  git status --short          # 应为空
+  git log --oneline -5        # 确认 HEAD 含预期改动
+  ```
+
+- 确认以下能力都在权威仓内（历史上曾因旧快照缺失而漏发）：
+  - `src/doc_system/index.py` 含 `VectorBackend` / `FlatBackend` / `HnswBackend`、`ann_provider`
+  - `src/doc_system/rebuild_hnsw.py`
+  - `scripts/verify_hnsw_load.py`
+  - `.github/workflows/ci.yml`、`tests/conftest.py`、`tests/test_integration_e2e.py`
+  - `pyproject.toml` 含 `[project.scripts]`（`cortex` 入口）与 ann / remote 可选依赖组
 
 ---
 
 ## 4. 依赖
 
-- 发布前确认 `pyproject.toml` 已正确声明以下**可选依赖**：
-  - **ann 组**：`hnswlib`、`numpy`
-  - **remote 组**：`requests`
-- 确保可选依赖分组（如 `[project.optional-dependencies]`）写法正确，用户可通过
-  `pip install ".[ann,remote]"` 安装完整能力。
+- 确认 `pyproject.toml` 已声明：核心 `pyyaml`；可选 **ann 组** `hnswlib>=0.8.0` + `numpy`、
+  **remote 组** `requests`。
+- 用户安装方式：`pip install ".[ann,remote]"`（全量）／`pip install .`（仅 offline 路径）。
+- `requires-python = ">=3.10"`，与 CI 矩阵 3.10–3.13 一致。
 
 ---
 
 ## 5. 验证
 
-在 `cortex` 仓库中执行以下验证，**全部通过方可发布**：
+在权威仓执行以下验证，**全部通过方可发布**：
 
 ```bash
-# 测试必须 36 passed
-PYTHONPATH=src python -m pytest tests/ -q
-
-# HnswBackend 必须可正常导入
-PYTHONPATH=src python -c "from doc_system.index import HnswBackend"
+pytest -q                                                    # 41 passed，无需 API key
+python -c "from doc_system.index import HnswBackend"         # hnsw 后端可导入
+cortex --help                                                # CLI 入口可用
+cortex ingest --config config.quickstart.yaml --out /tmp/cat.json   # Quickstart 离线跑通
 ```
 
-- 期望结果：`pytest` 输出 `36 passed`；`import HnswBackend` 无报错。
-- 若测试未全过或导入失败，回到第 3 步确认源码已正确同步，不得带病发布。
+- 期望结果：`41 passed`（无 key 也全绿，由 `tests/conftest.py` 强制 offline 保证）；
+  `cortex --help` 显示 `usage: cortex`；Quickstart 建出 18 个符号。
+- CI：push 到 `main` / 开 PR 时 GitHub Actions 自动跑 Python 3.10–3.13 矩阵，**四个版本全绿**方可发布。
+- 若测试未全过、导入失败或 CI 飘红，回到第 3 步排查，不得带病发布。
 
 ---
 
 ## 6. 发版
 
-- 打版本 tag：`git tag vX.Y.Z`（X.Y.Z 按语义化版本递增）。
-- 在 GitHub 创建对应的 **Release**，附变更说明。
-- 确保 `README.md` 包含** 5 分钟 Quickstart**，让用户可快速上手：
+- 打版本 tag：`git tag vX.Y.Z`（按语义化版本递增）。
+- 在 GitHub 创建对应 **Release**，附变更说明（重点列出新增能力：ANN 后端 / CLI 入口 / CI）。
+- `README.md` 已含** 5 分钟 Quickstart**（零配置 offline 全链路），无需再补：
 
   ```bash
-  pip install ".[ann,remote]"
-  # 按 README 的 Quickstart 初始化并启动
+  pip install -e ".[ann]"
+  cortex ingest --config config.quickstart.yaml --out catalog.json
   ```
 
 - 发布后再次复核第 1、2 条（密钥与发布源），确认公开仓库中无泄漏。
@@ -90,9 +109,9 @@ PYTHONPATH=src python -c "from doc_system.index import HnswBackend"
 
 ### 发布前最终确认（Checklist）
 
-- [ ] 第 1 条：密钥历史已清除，无明文 `SILICONFLOW_API_KEY`
-- [ ] 第 2 条：`cortex-runs/` 与 `.env` 未进入发布源
-- [ ] 第 3 条：`doc-system` 最新源码（含 ANN/hnsw 后端）已同步至 `cortex`
-- [ ] 第 4 条：`pyproject.toml` 声明 ann / remote 可选依赖
-- [ ] 第 5 条：`pytest` 36 passed 且 `HnswBackend` 可导入
+- [ ] 第 1 条：工作区与 git 历史均无明文 `SILICONFLOW_API_KEY`；`cortex-private` 未 push、未合并
+- [ ] 第 2 条：`cortex-runs/`、`.env`、运行时产物未进入发布源
+- [ ] 第 3 条：权威仓 `git status` 干净，ANN/hnsw/CLI/CI/集成测试文件齐全
+- [ ] 第 4 条：`pyproject.toml` 声明 ann / remote 可选依赖与 `cortex` 入口
+- [ ] 第 5 条：`pytest` **41 passed** + `HnswBackend` 可导入 + `cortex --help` 可用 + CI 四版本全绿
 - [ ] 第 6 条：已打 tag + GitHub Release，README 含 5 分钟 Quickstart
