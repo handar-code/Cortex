@@ -1,0 +1,17 @@
+# 运行时生成产物（可用 CLI 重新生成，不入库）
+.docstore/
+.doc_system/
+catalog.snapshot.json
+_*.json
+index.json
+artifacts/
+
+# 环境
+.venv/
+__pycache__/
+*.pyc
+.env
+*.local.yaml
+
+# 系统
+.DS_Store

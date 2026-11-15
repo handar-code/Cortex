@@ -1,0 +1,87 @@
+# 通用项目知识库文档系统 · 配置示例
+# 系统本身不硬编码任何项目；这里只是「示例目标项目」的配置。
+# 真实接入某项目时，复制本文件、按该项目结构改写即可。
+
+project:
+  name: "sample-project"
+
+roots:
+  # 相对本配置文件的路径；真实项目按自身结构配置。支持两种写法：
+  #   - path: "some/dir"      递归扫描该目录下所有匹配文件（默认）
+  #   - path: "project/root"  只扫该目录「顶层」文件，不递归进子目录
+  #     files_only: true       ← 用于纳入项目根级核心代码（cli.py 等），
+  #                             又不把巨型子目录一并拖入扫描
+  - path: "fixtures/sample_project"
+    description: "示例目标项目（合成 fixture，非任何真实项目）"
+
+blacklist:
+  - "**/node_modules/**"
+  - "**/__pycache__/**"
+  - "**/.git/**"
+  - "**/.venv/**"
+
+languages:
+  - name: python
+    extensions: [".py"]
+    extractor: python_ast
+  - name: plaintext
+    extensions: [".md", ".txt"]
+    extractor: plaintext
+  # - name: typescript
+  #   extensions: [".ts", ".tsx"]
+  #   extractor: typescript_typedoc   # 占位，后续 Phase 实现
+
+triage:
+  # 内置启发式：文件名/路径模式 → 有效/无效分类（确定性，优先于 AI）
+  test_patterns:
+    - "**/test_*.py"
+    - "**/*_test.py"
+    - "**/*.spec.*"
+    - "**/__tests__/**"
+  generated_patterns:
+    - "**/*.generated.*"
+    - "**/*.gen.*"
+
+# 向量通道（三件套之一 · 设计稿 §13.4）
+# provider（三档，按依赖/语义从弱到强）：
+#   offline      确定性哈希向量，纯标准库、零依赖、零成本、可复现（断网/无 key/零配置兜底）
+#   siliconflow  BAAI/bge-m3 语义向量，经硅基流动 API（1024 维；当前免费、不限次、不限速）
+#   local        （可选扩展）本地向量模型（sentence-transformers / Ollama / llama.cpp），
+#                真语义 + 数据不出本机 + 断网可用，但需装运行时与权重（本机 M5 Air 10 核 GPU 跑得动）
+# 推荐：能联网且有 key → siliconflow（corpus 全量真语义，本机零负担）；否则 offline 兜底。
+# API key 不写进配置文件：从环境变量 SILICONFLOW_API_KEY 或项目根 .env 读取。
+embedding:
+  provider: siliconflow      # 默认真语义；断网/零配置环境改回 offline
+  model: "BAAI/bge-m3"
+  api_base: "https://api.siliconflow.cn/v1/embeddings"
+  api_key_env: "SILICONFLOW_API_KEY"
+  batch_size: 32
+
+# §12 归因双轨：domain 不只靠手写 @domain。真实项目没有显式键时，
+# 用目录树 scope 作稳定归属 + 向量隐式轨自动产出软归属分布，domain 永不为空。
+attribution:
+  enabled: true
+  provider: siliconflow      # 隐式轨向量：siliconflow 真语义（断网兜底改回 offline）
+  scope_depth: 1             # 域骨架层级：1=scope，2=scope/module（§13.4 Q5 目录树）
+  domain_from: structural    # 无显式键时归属键：structural(目录树,可复现) / vector(语义)
+  text_channel: true         # §13.4 注释文本(docstring)独立检索通道
+
+# 近邻候选池：符号数很大时把 O(n²) 精确近邻降为 O(n·pool) 采样近似；
+# 0 = 精确全量（小项目默认）。真实大项目可设 256~1024。
+index:
+  neighbor_pool: 0
+
+# 检索增强（选项 C · 查询时重排）：覆盖默认 offline 哈希向量通道的语义噪声。
+# 启用后，每次查询先取 top-N 候选、再用 bge-m3 真语义向量对候选重排挑前 k；
+# 按次计费、零额外离线成本，质量接近全量真语义索引（推荐解，见 TEST_REPORT §11）。
+# 设为 null 则不改默认行为（corpus 原生 embedder 直接排序）。
+# retrieval:
+#   rerank: siliconflow        # 候选重排 provider（需 SILICONFLOW_API_KEY / .env）
+#   rerank_candidates: 20      # 重排候选池大小（越大召回越全、API 调用越多）
+
+# 附加产物开关：默认全关；仅当存在人类团队介入、需要人读/演示时启用（设计稿 §13.3/§13.6 Q-B）
+optional:
+  typedoc_site: false   # 独立 TypeDoc HTML 站（TS 项目才有意义）
+  pagefind: false       # PageFind 人读检索（替代 Algolia，config 开启）
+  demo: false           # 演示站
+  mkdocs: true          # MkDocs 主站（人 HTML + Agent MD/llms.txt），唯一必需产物
