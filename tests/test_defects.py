@@ -186,3 +186,79 @@ def use_it():
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ImportContractTest(unittest.TestCase):
+    """导入契约检测（check_import_contract）。
+
+    重点覆盖那些容易产生假阳性的写法——这些坑都是在真实 Hermes 项目上
+    逐个踩出来并修掉的。
+    """
+    from doc_system.defects import check_import_contract as _check
+
+    def setUp(self):
+        self.td = tempfile.TemporaryDirectory()
+        self.root = Path(self.td.name)
+        self.addCleanup(self.td.cleanup)
+        # pyproject.toml 让扫描器把这里当仓库根
+        _write(self.root, "pyproject.toml", "[project]\nname='fixture'\n")
+
+    def check(self, root=None):
+        return ImportContractTest._check(root=root or self.root)
+
+    # ── 真缺陷 ──
+    def test_missing_symbol_is_error(self):
+        _write(self.root, "pkg/__init__.py", "def present(): pass\n")
+        _write(self.root, "use.py", "from pkg import missing\n")
+        rep = self.check()
+        self.assertFalse(rep.passed)
+        self.assertEqual(len(rep.defects), 1)
+        self.assertEqual(rep.defects[0].symbol, "missing")
+        self.assertEqual(rep.defects[0].kind, "import_contract")
+
+    def test_reexported_symbol_is_ok(self):
+        """`from .impl import X` 形式的 re-export 不能被误判为缺失。"""
+        _write(self.root, "pkg/__init__.py", "from .impl import present  # noqa: F401\n")
+        _write(self.root, "pkg/impl.py", "def present(): pass\n")
+        _write(self.root, "use.py", "from pkg import present\n")
+        self.assertTrue(self.check().passed)
+
+    def test_package_submodule_import_is_ok(self):
+        """`from pkg import submodule` 合法，即使 __init__.py 没显式 import。"""
+        _write(self.root, "pkg/__init__.py", "")
+        _write(self.root, "pkg/helper.py", "X = 1\n")
+        _write(self.root, "use.py", "import pkg.helper\n")
+        self.assertTrue(self.check().passed)
+
+    def test_relative_import_inside_package_is_ok(self):
+        """包内 `from .config import X` —— package 必须按文件所在包算，
+        按模块名算会解析出 pkg.mod.config 这个不存在的路径 → 假阳性。"""
+        _write(self.root, "pkg/__init__.py", "")
+        _write(self.root, "pkg/config.py", "VALUE = 1\n")
+        _write(self.root, "pkg/consumer.py", "from .config import VALUE\n")
+        self.assertTrue(self.check().passed)
+
+    def test_from_dot_import_submodule_is_ok(self):
+        """`from . import jiter_preload as _x` 形式。"""
+        _write(self.root, "pkg/__init__.py", "from . import jiter_preload  # noqa: F401\n")
+        _write(self.root, "pkg/jiter_preload.py", "X = 1\n")
+        self.assertTrue(self.check().passed)
+
+    def test_missing_relative_submodule_is_error(self):
+        _write(self.root, "pkg/__init__.py", "from . import nope\n")
+        rep = self.check()
+        self.assertFalse(rep.passed)
+        self.assertTrue(any(d.symbol == "nope" for d in rep.defects))
+
+    def test_external_import_is_skipped(self):
+        """外部依赖不推测 —— 不该因为没装就报缺陷。"""
+        _write(self.root, "use.py", "from some_third_party_pkg import whatever\n")
+        self.assertTrue(self.check().passed)
+
+    def test_scan_subdir_still_indexes_whole_repo(self):
+        """root 传子目录时，仍要索引全仓，否则跨目录的内部导入会被误判。"""
+        _write(self.root, "providers/__init__.py", "def list_providers(): pass\n")
+        _write(self.root, "hermes_cli/auth.py", "from providers import list_providers\n")
+        rep = self.check(root=self.root / "hermes_cli")
+        self.assertTrue(rep.passed, msg=str([d.message for d in rep.defects]))
+        self.assertEqual(rep.files_scanned, 1)

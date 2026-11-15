@@ -226,3 +226,220 @@ def check_reverse_attribute_contract(
                 ))
 
     return report
+
+
+# ── 导入契约 ────────────────────────────────────────────────────────────
+
+def _module_name_for(path: Path, root: Path) -> str | None:
+    """把 .py 文件路径还原成模块名（含 __init__.py → 包名）。"""
+    try:
+        rel = path.relative_to(root)
+    except ValueError:
+        return None
+    parts = list(rel.parts)
+    if not parts or parts[-1].endswith(".py") is False:
+        return None
+    parts[-1] = parts[-1][:-3]
+    if parts[-1] == "__init__":
+        parts = parts[:-1]
+    return ".".join(p for p in parts if p)
+
+
+def _exported_symbols(tree: ast.AST) -> set[str]:
+    """模块对外暴露的符号集合。
+
+    **必须包含 re-export 的名字** —— 一个模块常见的写法是
+    ``from .adapter import QQAdapter  # noqa: F401``，符号不在本模块定义，
+    但确实能被外部 import。只看 FunctionDef/ClassDef 会把它误判为缺失。
+
+    这个坑很典型：Hermes 的 ``gateway/platforms/qqbot/__init__.py`` 用相对导入
+    重导出 5 个符号，第一版静态扫描器因此报了 141 条假阳性中的一大半。
+    """
+    symbols: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            symbols.add(node.name)
+        elif isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                if alias.name == "*":
+                    continue
+                symbols.add(alias.asname or alias.name)
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                symbols.add(alias.asname or alias.name.split(".")[0])
+        elif isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    symbols.add(target.id)
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            symbols.add(node.target.id)
+    return symbols
+
+
+def _resolve_relative(module: str, level: int, package: str) -> str:
+    """把 ``from .adapter import X`` 解析成绝对模块名。"""
+    if level <= 0:
+        return module or ""
+    base_parts = package.split(".") if package else []
+    up = level - 1
+    base = base_parts[:len(base_parts) - up] if up else base_parts
+    return ".".join([p for p in base if p] + ([module] if module else []))
+
+
+def check_import_contract(root: str | Path) -> ScanReport:
+    """检查仓库内部的 ``from X import Y`` 是否真的能从 X 拿到 Y。
+
+    与 ``check_reverse_attribute_contract`` 互补：后者查的是「运行时反向读
+    模块属性」，这里查的是「导入期就成立的契约」。
+
+    两处刻意的设计，用来压低假阳性：
+
+    1. **解析相对导入**（``node.level > 0``）——按当前文件所属包还原绝对模块名。
+    2. **目标模块的符号集合包含 re-export**（见 ``_exported_symbols``）。
+
+    局限：只检查能在本仓库内定位到的模块；外部依赖（第三方包 / 标准库）
+    一律跳过，不做推测。
+    """
+    root = Path(root).resolve()
+    report = ScanReport()
+
+    if not root.is_dir():
+        report.defects.append(Defect(
+            kind="scan_root_missing", severity="error", symbol="",
+            location=str(root), message=f"扫描根目录不存在: {root}",
+        ))
+        return report
+
+    # 索引范围必须覆盖**整个仓库**，而不是只扫 root。
+    # 否则 root=hermes_cli 时，它导入的 providers 包不在索引里，却会被
+    # 当成"仓库内模块"判成符号缺失 → 大量假阳性。
+    # 用 pyproject.toml / .git 向上定位仓库根；找不到就退回 root。
+    repo_root = root.resolve()
+    for cand in [repo_root, *repo_root.parents]:
+        if (cand / "pyproject.toml").is_file() or (cand / ".git").exists():
+            repo_root = cand
+            break
+
+    # 第一遍：为仓库内每个 .py 建立 模块名 → 导出符号集合
+    module_symbols: dict[str, set[str]] = {}
+    trees: list[tuple[Path, ast.AST]] = []
+    # 索引全仓，但只检查 root 下的文件
+    index_paths = list(sorted(repo_root.rglob("*.py")))
+    check_paths = set(sorted(root.rglob("*.py")))
+    for path in index_paths:
+        in_scope = path in check_paths
+        try:
+            source = path.read_text(encoding="utf-8")
+            tree = ast.parse(source)
+        except (OSError, SyntaxError, UnicodeDecodeError):
+            report.files_failed += 1
+            continue
+        if in_scope:
+            report.files_scanned += 1
+            trees.append((path, tree))
+        mod = _module_name_for(path, repo_root)
+        if mod:
+            module_symbols.setdefault(mod, set()).update(_exported_symbols(tree))
+
+    # 包的导出符号还应包含它的子模块名：`from pkg import submodule` 是合法的，
+    # 即使 __init__.py 里没写 import（Python 会在导入时自动解析子模块）。
+    for mod in list(module_symbols):
+        pass  # 占位，见下方按路径补齐
+    for path in index_paths:
+        if path.name == "__init__.py":
+            pkg = _module_name_for(path, repo_root)
+            if pkg is None:
+                continue
+            for child in path.parent.iterdir():
+                if child.is_file() and child.suffix == ".py" and child.name != "__init__.py":
+                    module_symbols.setdefault(pkg, set()).add(child.stem)
+                elif child.is_dir() and (child / "__init__.py").is_file():
+                    module_symbols.setdefault(pkg, set()).add(child.name)
+
+    # 第二遍：检查每条 ImportFrom
+    for path, tree in trees:
+        mod = _module_name_for(path, repo_root)
+        # from .X 的层级基准是「当前文件所在的包」，不是当前模块名本身。
+        # 若写错成模块名，gateway/delivery.py 里的 from .config import X
+        # 会被解析成 gateway.delivery.config（不存在）→ 大量假阳性。
+        try:
+            rel = path.relative_to(repo_root)
+            parts = list(rel.parent.parts)
+            package = ".".join(p for p in parts if p != "." and p)
+        except ValueError:
+            package = ""
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ImportFrom):
+                continue
+            if node.level > 0 and not node.module:
+                # `from . import X` / `from .. import X` —— X 是子模块名，
+                # 目标包就是当前包（按层级上溯），检查该子模块是否存在。
+                base_parts = [p for p in package.split(".") if p]
+                up = node.level - 1
+                base = ".".join(base_parts[:len(base_parts) - up]) if up else ".".join(base_parts)
+                for alias in node.names:
+                    if alias.name == "*":
+                        continue
+                    child_mod = f"{base}.{alias.name}" if base else alias.name
+                    if child_mod not in module_symbols:
+                        report.defects.append(Defect(
+                            kind="import_contract",
+                            severity="error",
+                            symbol=alias.name,
+                            location=f"{path}:{node.lineno}",
+                            message=f"相对导入 from {'.' * node.level} import {alias.name} 在仓库内解析不到子模块 {child_mod}",
+                            hint="检查包结构与相对层级是否正确",
+                        ))
+                continue
+
+            target_mod = _resolve_relative(node.module or "", node.level, package)
+            if not target_mod:
+                continue
+            if target_mod not in module_symbols and node.level == 0:
+                continue  # 绝对导入指向外部依赖 → 不推测
+            # 相对导入解析不到时，不能简单跳过：它可能正是一个断裂的契约。
+            # 用「路径末段」再兜一次（如 .impl → pkg.impl），仍找不到才判定缺失。
+            if target_mod not in module_symbols and node.level > 0:
+                candidates = [
+                    m for m in module_symbols
+                    if m.endswith("." + target_mod) or m == target_mod
+                ]
+                if candidates:
+                    target_mod = candidates[0]
+                else:
+                    report.defects.append(Defect(
+                        kind="import_contract",
+                        severity="error",
+                        symbol=node.module or "",
+                        location=f"{path}:{node.lineno}",
+                        message=(
+                            f"相对导入 .{node.module or ''} 在仓库内解析不到目标模块"
+                            "（导入期即 ModuleNotFoundError）"
+                        ),
+                        hint="检查包结构与相对层级是否正确",
+                    ))
+                    continue
+
+            available = module_symbols[target_mod]
+            for alias in node.names:
+                if alias.name == "*":
+                    continue
+                report.symbols_checked += 1
+                if alias.name in available:
+                    continue
+                report.defects.append(Defect(
+                    kind="import_contract",
+                    severity="error",
+                    symbol=alias.name,
+                    location=f"{path}:{node.lineno}",
+                    message=(
+                        f"从 {target_mod} 导入 {alias.name}，但该模块未定义也未 re-export 它"
+                        "（导入期即 ImportError）"
+                    ),
+                    hint=(
+                        f"检查 {target_mod} 是否漏了导出；或该符号本应从别的模块导入"
+                    ),
+                ))
+
+    return report

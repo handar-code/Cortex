@@ -27,7 +27,7 @@ import sys
 from pathlib import Path
 
 from .config import Config, EmbeddingConfig
-from .defects import check_reverse_attribute_contract
+from .defects import check_import_contract, check_reverse_attribute_contract
 from .governance import bootstrap as boot
 from .governance import observability as obs
 from .governance import trigger
@@ -241,10 +241,13 @@ def cmd_defects(args):
     与 catalog 检索互补——catalog 告诉你"谁调用了谁"，defects 告诉你
     "这里的契约被违反了"。
     """
-    rep = check_reverse_attribute_contract(
-        root=args.root,
-        target_module=args.target,
-    )
+    if args.check == "imports":
+        rep = check_import_contract(root=args.root)
+    else:
+        rep = check_reverse_attribute_contract(
+            root=args.root,
+            target_module=args.target,
+        )
     print(json.dumps(rep.to_dict(), ensure_ascii=False, indent=2))
     # 有 error 级缺陷时返回非零，便于接入 CI 做门禁
     return 0 if rep.passed else 1
@@ -292,7 +295,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("ci-publish"); sp.add_argument("--config", required=True); sp.add_argument("--store", default=".docstore"); sp.add_argument("--reason", required=True); sp.add_argument("--min", type=float, default=0.95); sp.set_defaults(func=cmd_ci_publish)
     sp = sub.add_parser("probe"); sp.add_argument("--config", required=True); sp.add_argument("--store", default=".docstore"); sp.set_defaults(func=cmd_probe)
     sp = sub.add_parser("jury"); sp.add_argument("--store", default=".docstore"); sp.add_argument("--question", required=True); sp.set_defaults(func=cmd_jury)
-    sp = sub.add_parser("defects", help="静态检测隐式契约缺陷（当前：反向读模块属性）"); sp.add_argument("--root", required=True, help="扫描根目录（递归 .py）"); sp.add_argument("--target", required=True, help="被反向引用的目标模块名（需可 import）"); sp.set_defaults(func=cmd_defects)
+    sp = sub.add_parser("defects", help="静态检测隐式契约缺陷（当前：反向读模块属性）"); sp.add_argument("--root", required=True, help="扫描根目录（递归 .py）"); sp.add_argument("--target", help="被反向引用的目标模块名（需可 import；--check=attrs 时必填）"); sp.add_argument("--check", choices=["attrs", "imports"], default="attrs", help="检查器：attrs=反向读模块属性（默认）| imports=导入契约"); sp.set_defaults(func=cmd_defects)
     sp = sub.add_parser("bootstrap"); sp.add_argument("--agents-md", required=True); sp.add_argument("--out", default=".doc_system/constitution.json"); sp.set_defaults(func=cmd_bootstrap)
     return p
 
