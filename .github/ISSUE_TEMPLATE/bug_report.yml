@@ -1,0 +1,55 @@
+name: Bug 报告
+description: 报告一个可复现的问题
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 发生了什么
+      description: 实际看到的行为
+      placeholder: |
+        运行 `cortex retrieve ...` 后返回了空结果，但预期应命中 User 符号
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期行为
+      placeholder: 应该返回 top-3 命中
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: 复现步骤
+      description: 最小可复现的命令序列，附上使用的配置文件
+      placeholder: |
+        1. cp config.quickstart.yaml my.yaml
+        2. cortex ingest --config my.yaml --root .
+        3. cortex retrieve --config my.yaml --query "user"
+      render: shell
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 版本
+      placeholder: 0.1.0
+    validations:
+      required: true
+  - type: dropdown
+    id: provider
+    attributes:
+      label: 使用的 embedder
+      options:
+        - offline（默认，无需 key）
+        - siliconflow（云端）
+        - 本地模型服务
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 完整日志
+      description: 用 `cortex ... --verbose` 重跑并粘贴完整输出
+      render: shell

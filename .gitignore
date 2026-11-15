@@ -16,3 +16,9 @@ src/*.egg-info/
 build/
 dist/
 *.egg-info/
+
+# 测试缓存
+.pytest_cache/
+.pytest-cache-files-*/
+.ruff_cache/
+.mypy_cache/

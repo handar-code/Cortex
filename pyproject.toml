@@ -1,13 +1,48 @@
 [project]
 name = "doc-system"
 version = "0.1.0"
-description = "通用、从零构建的项目知识库文档系统（不耦合任何具体项目）"
+description = "Cortex · 通用项目知识库文档系统：让新 Agent 快速、可靠、可追溯地接手任意代码库"
+readme = "README.md"
+license = { text = "MIT" }
 requires-python = ">=3.10"
-dependencies = ["pyyaml"]
+authors = [{ name = "Cortex Contributors" }]
+keywords = [
+  "agent", "knowledge-base", "codebase", "documentation", "retrieval",
+  "vector-search", "llm", "onboarding", "context-engineering",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Software Development :: Documentation",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Topic :: Utilities",
+]
+
+# 核心依赖：仅 PyYAML。
+# 全链路（ingest → 归因 → 渲染 → 索引 → 检索）零第三方依赖即可跑通，
+# embedding 走内置 offline 确定性哈希，不需要联网、不需要任何密钥。
+dependencies = ["pyyaml>=6.0"]
 
 [project.optional-dependencies]
-ann = ["hnswlib>=0.8.0", "numpy"]
-remote = ["requests"]
+# ANN（近似最近邻）后端：hnswlib 加速大规模向量检索。
+# numpy 是 hnswlib 的传递依赖，显式列出以保证版本可控。
+ann = ["hnswlib>=0.8.0", "numpy>=1.23"]
+
+# 真语义向量：本地模型服务（Ollama / llama.cpp / LM Studio / vLLM）与云端
+# （硅基流动 BAAI/bge-m3）都是同一个 OpenAI 兼容接口 POST /v1/embeddings，
+# 由标准库 urllib 实现，因此 **无需额外第三方依赖**，改 api_base 即可切换。
+
+[project.urls]
+Homepage = "https://github.com/your-org/cortex"
+Repository = "https://github.com/your-org/cortex"
+Issues = "https://github.com/your-org/cortex/issues"
+Changelog = "https://github.com/your-org/cortex/blob/main/docs/RELEASING.md"
 
 # 独立命令行入口：pip install 后可直接用 `cortex <子命令>`，无需再记 python -m。
 # 保留 `doc-system` 作为兼容别名，两者指向同一 main()。
@@ -20,7 +55,7 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-package-dir = {"" = "src"}
+package-dir = {"" = "src" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -30,4 +65,3 @@ where = ["src"]
 # 不是测试，禁止被 pytest 误当成 test_* 收集执行。
 testpaths = ["tests"]
 python_files = ["test_*.py"]
-

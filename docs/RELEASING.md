@@ -79,13 +79,13 @@
 在本仓库执行以下验证，**全部通过方可发布**：
 
 ```bash
-pytest -q                                                    # 41 passed，无需 API key
+pytest -q                                                    # 43 passed，无需 API key
 python -c "from doc_system.index import HnswBackend"         # hnsw 后端可导入
 cortex --help                                                # CLI 入口可用
 cortex ingest --config config.quickstart.yaml --out /tmp/cat.json   # Quickstart 离线跑通
 ```
 
-- 期望结果：`41 passed`（无 key 也全绿，由 `tests/conftest.py` 强制 offline 保证）；
+- 期望结果：`43 passed`（无 key 也全绿，由 `tests/conftest.py` 强制 offline 保证）；
   `cortex --help` 显示 `usage: cortex`；Quickstart 建出 18 个符号。
 - CI：push 到 `main` / 开 PR 时 GitHub Actions 自动跑 Python 3.10–3.13 矩阵，**四个版本全绿**方可发布。
 - 若测试未全过、导入失败或 CI 飘红，回到第 3 步排查，不得带病发布。
@@ -113,5 +113,5 @@ cortex ingest --config config.quickstart.yaml --out /tmp/cat.json   # Quickstart
 - [ ] 第 2 条：`cortex-runs/`、`.env`、运行时产物未进入发布源
 - [ ] 第 3 条：本仓库 `git status` 干净，ANN/hnsw/CLI/CI/集成测试文件齐全
 - [ ] 第 4 条：`pyproject.toml` 声明 ann / remote 可选依赖与 `cortex` 入口
-- [ ] 第 5 条：`pytest` **41 passed** + `HnswBackend` 可导入 + `cortex --help` 可用 + CI 四版本全绿
+- [ ] 第 5 条：`pytest` **43 passed** + `HnswBackend` 可导入 + `cortex --help` 可用 + CI 四版本全绿
 - [ ] 第 6 条：已打 tag + GitHub Release，README 含 5 分钟 Quickstart

@@ -1,0 +1,43 @@
+name: 功能建议
+description: 提出新能力或改进
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 要解决的问题
+      description: 描述使用场景与痛点，而不是直接描述实现
+      placeholder: |
+        接手一个只有 Python 的项目时，我希望也能按目录维度检索到非 Python 的配置文件
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 期望的做法
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 考虑过的其他方案
+      description: 以及为什么不选它们
+  - type: dropdown
+    id: scope
+    attributes:
+      label: 改动范围
+      options:
+        - 仅核心机制（需先读 docs/design.md）
+        - 提取器 / 后端（按适配器契约扩展）
+        - 配置与文档
+        - 不确定
+    validations:
+      required: true
+  - type: checkboxes
+    id: constraints
+    attributes:
+      label: 约束确认
+      options:
+        - label: 该改动不影响「无 key 离线全链路跑通」
+        - label: 该改动不引入对特定项目的硬编码
+        - label: 我已读过 docs/design.md 相关章节

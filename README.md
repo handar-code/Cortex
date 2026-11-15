@@ -9,6 +9,79 @@
 
 ---
 
+## 这是什么（30 秒版）
+
+**问题**：Agent 接手一个陌生代码库时，标准做法是"让它读代码"——但读 3 万行巨型文件既慢又烧上下文，读完还记不住结构，更谈不上可追溯。
+
+**Cortex 的做法**：把代码库**编译成结构化知识库**，让 Agent 查表而不是通读。
+
+```
+代码库 ──ingest──▶ 符号目录(catalog) ──▶ 归因(@domain) ──▶ 向量索引
+                     │                     │                  │
+                     └── 增量重算+版本快照    └── 双轨裁决        └── 三通道并列
+                                    ▼
+                          Agent 检索（结构化证据链）
+```
+
+**四句话说清核心设计**：
+
+1. **归因双轨** —— `@domain` 显式标注 ‖ 向量隐式软归属，两轨**平等并行、互不为主**。真实项目没人会手写标注，所以 domain 永不因缺手写标注而全空。
+2. **三通道并列** —— 检索返回 `annotation_hits`（显式键）/ `annotation_text_hits`（docstring 词项）/ `vector_hits`（向量近邻），**不预融合**，交 Agent 裁决。
+3. **git 式版本化** —— 每次重算 = 一次提交，强制 `change_reason`、可回滚、`active` 标记已发布版，并兜住"代码改了但 catalog 没跟上"的漂移窗口。
+4. **零人可运行** —— 全链路离线、零密钥、零人工介入即可跑通；AI 全自主为默认，人类审核是可选附加层。
+
+**核心指标**（实测，见 [`docs/test_report.md`](docs/test_report.md)）：近万文件的大型项目 → 401 文件 / **10512 符号** / 10 域分片 / ~3.3s / 溯源覆盖率 1.0 / 回归 43 passed。
+
+## 为什么不是"再写一份文档"
+
+| | 传统手写文档 | Cortex |
+|---|---|---|
+| 代码一改 | 立刻过期 | 增量重算 + 快照对账，自动发现漂移 |
+| 新 Agent 接手 | 靠人复述 / 靠翻文档 | 查结构化索引，直接拿证据链 |
+| 上下文成本 | 全量文档进 prompt | 只取命中的符号与片段 |
+| 可追溯性 | 通常无 | 每个符号带溯源与快照版本 |
+| 重复劳动 | 每个新 Agent 重来一遍 | 一次建档，任意 Agent 复用 |
+
+## 核心能力一览
+
+| 能力 | 说明 |
+|---|---|
+| **多语言符号抽取** | Python AST 提取；Markdown 全文 + 注释（`#` / `//` / `/* */` / `<!-- -->`）独立成符号；TypeScript 提取器为占位，可按 `extract/` 适配器契约扩展 |
+| **确定性优先** | 内置甄别 + 内置提取为主路径，AI 提取仅作兜底升级 |
+| **两档向量** | `offline` 确定性哈希（零依赖，CI/断网可用）/ OpenAI 兼容接口客户端（本地模型服务与云端**同一套代码**，改 `api_base` 切换） |
+| **ANN 后端** | `flat` 暴力余弦（零依赖默认）/ `hnsw` 近似最近邻（`pip install ".[ann]"`），与 embedder 正交可自由组合 |
+| **查询时重排** | corpus 用离线哈希建索引、查询用 bge-m3 重排（`retrieval.rerank: siliconflow`），按次计费、零额外离线成本 |
+| **渲染产物** | MkDocs 主站（人读）+ Markdown/llms.txt 分片（Agent 读）；可选产物默认关 |
+| **读写分离** | 读 = Skill 读指南（零写）/ 写 = MCP git 式提交，双通道物理分离 |
+
+## 依赖
+
+**核心依赖只有 1 个**：
+
+```
+pyyaml>=6.0
+```
+
+全链路（ingest → 归因 → 渲染 → 索引 → 检索）**零第三方依赖即可跑通**，embedding 走内置 `offline` 确定性哈希，不需要联网、不需要任何密钥。
+
+**可选依赖**：
+
+| 组 | 依赖 | 用途 |
+|---|---|---|
+| `ann` | `hnswlib>=0.8.0`、`numpy>=1.23` | 大规模向量检索的近似最近邻后端 |
+| — | 无 | 真语义向量（本地模型服务 / 云端）：标准库 `urllib` 实现 OpenAI 兼容 `POST /v1/embeddings`，**无需额外依赖** |
+
+```bash
+pip install -e .                 # 最小：核心功能，够跑 offline 全链路
+pip install -e ".[ann]"          # 可选：加 hnswlib + numpy，启用 hnsw 后端
+```
+
+- **Python**：>= 3.10（CI 覆盖 3.10 / 3.11 / 3.12 / 3.13）
+- **系统要求**：无。纯 Python，无需编译工具链（除非装 `ann` 组，hnswlib 需要 wheel 或编译环境）
+- **外部服务**：默认**不需要**。用 `offline` 时完全离线；用真语义时需要一个 OpenAI 兼容 `/v1/embeddings` 端点（本地 Ollama / llama.cpp / LM Studio / vLLM，或云端硅基流动）
+
+---
+
 ## §0 一页速查（回来看这一处就够）
 
 | 我想… | 用这个 |
@@ -16,7 +89,7 @@
 | 5 分钟跑通全链路、无 key | 下面「5 分钟 Quickstart」+ `config.quickstart.yaml`（offline） |
 | 生产部署、真语义检索 | `config.example.yaml`（siliconflow / BAAI/bge-m3）+ `SILICONFLOW_API_KEY` |
 | 大项目加速向量检索 | `--ann-provider hnsw` 或配置 `ann_provider: hnsw`（需 `pip install ".[ann]"`） |
-| 确认改动没坏 | `pytest -q`（41 passed，无 key 也全绿）；push 后 GitHub Actions 自动跑 |
+| 确认改动没坏 | `pytest -q`（43 passed，无 key 也全绿）；push 后 GitHub Actions 自动跑 |
 | 查全部命令 | `cortex --help` ｜ 下方「完整 CLI 参考」 |
 | 发布前安全核查 | `docs/RELEASING.md`（密钥 / 发布源 / 依赖 / 验证 / 发版） |
 
@@ -184,7 +257,7 @@ cortex rollback  --version v1                 # 回滚 active
 ## 测试与 CI
 
 ```bash
-pytest -q                 # 41 passed，无需 API key
+pytest -q                 # 43 passed，无需 API key
 python -m unittest discover -s tests   # 等价（unittest 风格亦可跑）
 ```
 
