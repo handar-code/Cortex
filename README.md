@@ -4,8 +4,8 @@
 > 系统**不耦合任何具体项目**——项目结构、语言、甄别规则、治理策略全部由 `config.yaml` 驱动，代码零硬编码。
 
 - pip 包名：`doc-system` ｜ 安装后命令：`cortex`（兼容别名 `doc-system`）
-- 唯一权威仓：本仓库（`<REPO_ROOT>`）；发布口径见 [`docs/RELEASING.md`](docs/RELEASING.md)
-- 实现范围：设计稿《面向 Agent 接手的项目知识库：文档系统设计方案》Phase 1~6 全部落地
+- **本仓库 = Cortex 唯一主仓**（开发即发布）；发布口径见 [`docs/RELEASING.md`](docs/RELEASING.md)，仓库关系见 [`ARCHIVED.md`](ARCHIVED.md)
+- 实现范围：设计稿《面向 Agent 接手的项目知识库：文档系统设计方案》Phase 1~6 全部落地 → 完整设计稿见 [`docs/design.md`](docs/design.md)
 
 ---
 
@@ -21,7 +21,7 @@
 | 发布前安全核查 | `docs/RELEASING.md`（密钥 / 发布源 / 依赖 / 验证 / 发版） |
 
 **三个关键概念（后面会展开）：**
-- **三档 embedder 梯子** = `offline`（哈希兜底）/ `siliconflow`（云端真语义）/ `local`（本地模型，规划中）。决定**语料向量怎么算**。
+- **两档 embedder 梯子** = `offline`（确定性哈希兜底）/ 通用 OpenAI 兼容接口客户端（`siliconflow` 云端 或 本地模型服务）。决定**语料向量怎么算**。
 - **ANN 后端** = `flat`（暴力余弦）/ `hnsw`（hnswlib 近似最近邻）。决定**查询时怎么找最近邻**，与 embedder 正交、可自由组合。
 - **三通道并列** = 检索同时返回 `annotation_hits`（`@domain` 显式键）/ `annotation_text_hits`（docstring 词项）/ `vector_hits`（向量近邻），**不预融合**，交 Agent 裁决。
 
@@ -38,7 +38,7 @@ pip install -e .                 # 最小：只装 pyyaml，够跑 offline 全�
 # pip install -e ".[ann,remote]" # 全量（remote=requests，真语义路径用）
 
 # 2) 在任意工作目录准备产物目录（配置用绝对路径引用仓库自带的 quickstart 配置）
-CFG=/path/to/doc-system/config.quickstart.yaml
+CFG=/path/to/cortex/config.quickstart.yaml
 mkdir -p demo && cd demo
 
 # 3) 建档：扫描 → 甄别 → 提取 → 归因 → catalog 快照
@@ -74,17 +74,29 @@ cortex index --config "$CFG" --store .docstore --ann-provider hnsw \
 
 ---
 
-## 三档 embedder 梯子：语料向量怎么算
+## 两档 embedder 梯子：语料向量怎么算
 
 `index.get_embedder(cfg)` 按 `config.yaml` 的 `embedding.provider` 选择；CLI 也可用 `--provider` 覆盖。
 
 | 档 | provider | 实现 | 维度 | 依赖 | 语义 | 适用 |
 |---|---|---|---|---|---|---|
 | Tier0 | `offline`（默认） | `OfflineEmbedder` 确定性哈希 | 256 | 零（纯标准库） | 无（词项哈希） | 离线 / CI / 无 key / 可复现兜底 |
-| Tier2 | `siliconflow` | `SiliconFlowEmbedder` · BAAI/bge-m3 | 1024 | 硅基流动 API | 真语义、跨语言同义 | 生产建档：corpus 全量真语义 |
-| Tier1 | `local`（规划中） | 本地向量模型 | — | sentence-transformers / Ollama / llama.cpp | 真语义 | 数据不出本机 + 断网可用 |
+| Tier1 | `siliconflow`（可指本地） | `SiliconFlowEmbedder` · BAAI/bge-m3 | 1024 | HTTP 客户端 | 真语义、跨语言同义 | 生产建档：corpus 全量真语义 |
 
-**为什么这样分层**：`offline` 保证任何环境（CI、断网、刚 clone）都能零成本跑通全链路，是"永远能退化到的地板"；`siliconflow` 提供真语义质量（实测跨语言同义对余弦约 0.81~0.87，无关对约 0.44；离线哈希恒为 0、无法区分），且当前免费不限速，适合把整个 corpus 一次性嵌入成索引；`local` 是留给"数据必须留在本机"场景的扩展位，接口已留好（`Embedder` 基类），实现后不动 `KnowledgeIndex` / `retrieve`。
+**本地与云端同构**：本地模型服务（Ollama / llama.cpp server / LM Studio / vLLM）与云端（硅基流动）都是同一个 OpenAI 兼容接口 —— `POST /v1/embeddings`，请求体 `{model, input, encoding_format}`，响应 `{data:[{index, embedding}]}`。**所以不需要单独实现本地 embedder**，改 `config.api.yaml` 的 `api_base` 即可切换：
+
+```yaml
+# 本地端点
+embedding:
+  provider: siliconflow
+  api_base: http://localhost:11434/v1/embeddings   # Ollama；llama.cpp 用 http://localhost:8080/v1/embeddings
+  model: bge-m3                                     # 建议本地也用 bge-m3，保持 1024 维
+  api_key_env: SILICONFLOW_API_KEY                  # 本地不校验 token，放占位值即可
+```
+
+完整可跑配置见 [`config.api.yaml`](config.api.yaml)（注释里给出切本地/切云端各改哪几行）。**注意本地也用 bge-m3 保持 1024 维** —— 否则 `SiliconFlowEmbedder.dim=1024` 与实际向量维度不符，hnsw build 会失败。
+
+**为什么这样分层**：`offline` 保证任何环境（CI、断网、刚 clone）都能零成本跑通全链路，是"永远能退化到的地板"；真语义档提供语义质量（实测跨语言同义对余弦约 0.81~0.87，无关对约 0.44；离线哈希恒为 0、无法区分）。当前硅基流动免费不限速，适合把整个 corpus 一次性嵌入成索引。
 
 **批量 + 并发**：`embed_many(texts)` 按 `batch_size` 分组请求，多 batch 用 `ThreadPoolExecutor` 并发（`max_concurrency`，默认 8），结果按 `data[].index` 与 batch 下标双重归位，保证输出顺序与输入一致；失败抛清晰 `RuntimeError`。长文本截断到 `MAX_EMBED_CHARS=6000`，避免超出 bge-m3 上下文上限被 API 拒（catalog 仍存全文，只截断嵌入输入）。
 
@@ -201,4 +213,4 @@ python -m unittest discover -s tests   # 等价（unittest 风格亦可跑）
 - TypeScript 提取器为占位（`typescript_typedoc`），新语言按 `extract/` 适配器契约扩展即可。
 - MkDocs / PageFind / TypeDoc 站等附加产物走 config 开关（默认关），离线不构建、由 CI/人工启用。
 
-设计稿：`docs/design/agent-onboarding-doc-system-design.md`（本仓库仅存放实现；设计稿独立演进）。
+完整设计稿：[`docs/design.md`](docs/design.md)（999 行，含 §0 一页速查 · 八条主线 · §12 归因双轨 · §13 生命周期 · §14 宪法自举）；一页速查另见 [`docs/quickref.md`](docs/quickref.md)。

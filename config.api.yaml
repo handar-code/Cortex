@@ -1,0 +1,79 @@
+# 向量接口配置：本地 / 外部「同一个接口」，只换 api_base / model / key。
+#
+# 核心事实：Ollama、llama.cpp server、LM Studio、vLLM 与硅基流动等云端服务，
+# 暴露的都是同一个 OpenAI 兼容接口 POST /v1/embeddings，请求体
+# {model, input, encoding_format} 与响应 {data:[{index, embedding}]} 完全一致。
+# 因此 doc_system 里没有「本地 embedder」和「外部 embedder」两套东西：
+# SiliconFlowEmbedder 本身就是这个通用接口的一个客户端，provider 名只是历史沿用。
+# 想用本地模型，不需要新代码，把下面 embedding 段的 3 行换成「本地端点」那组即可。
+#
+# ── 切到外部接口（硅基流动，下面是当前生效值）─────────────────────────
+#   api_base: "https://api.siliconflow.cn/v1/embeddings"
+#   model:    "BAAI/bge-m3"          # 1024 维
+#   key:      项目根 .env 写 SILICONFLOW_API_KEY=<真实 key>
+#
+# ── 切到本地接口（Ollama / llama.cpp / LM Studio，改 3 行即可）─────────
+#   api_base: "http://localhost:11434/v1/embeddings"    # Ollama 默认端口
+#   model:    "bge-m3"                                   # 建议同样用 bge-m3，保持 1024 维
+#   key:      本地服务不校验 token，在 .env 放任意占位值即可，例如
+#             SILICONFLOW_API_KEY=local
+#   注：换本地端点后，attribution 隐式轨会自动跟随同一份 api_base（见 attribution.py），
+#       不会出现「主向量走本地、隐式轨偷偷打云端」的半套配置。
+#
+# 直接跑（云端需有效 key；本地按上面改 3 行）：
+#   cortex ingest   --config config.api.yaml --out catalog.json
+#   cortex store-init --config config.api.yaml --store .docstore
+#   cortex recompute --config config.api.yaml --store .docstore --reason init
+#   cortex ci-publish --config config.api.yaml --store .docstore --reason release
+#   cortex index    --config config.api.yaml --store .docstore --out .doc_system/index/index.json
+#   cortex retrieve --config config.api.yaml --store .docstore --query "user login" --k 3
+
+project:
+  name: "api-embed-sample"
+
+roots:
+  - path: "fixtures/sample_project"
+
+blacklist:
+  - "**/node_modules/**"
+  - "**/__pycache__/**"
+  - "**/.git/**"
+
+languages:
+  - name: python
+    extensions: [".py"]
+    extractor: python_ast
+  - name: plaintext
+    extensions: [".md", ".txt"]
+    extractor: plaintext
+
+triage:
+  test_patterns:
+    - "**/test_*.py"
+    - "**/*_test.py"
+  generated_patterns:
+    - "**/*.generated.*"
+    - "**/*.gen.*"
+
+# ── 向量接口（唯一需要区分本地/外部的地方）────────────────────────────
+embedding:
+  provider: siliconflow          # 通用 OpenAI 兼容客户端（本地端点也用它，勿改成别的）
+  api_base: "https://api.siliconflow.cn/v1/embeddings"
+  model: "BAAI/bge-m3"           # 1024 维；本地换 "bge-m3" 保持维度一致
+  api_key_env: "SILICONFLOW_API_KEY"
+  batch_size: 32
+  max_concurrency: 8             # 本地端点可调小（或设 1 串行）
+
+# 隐式轨：provider=siliconflow 时复用上面 embedding 段的完整接口参数，
+# 只覆盖 provider；因此切本地端点时两条轨一起切，无需第二份配置。
+attribution:
+  enabled: true
+  provider: siliconflow
+  scope_depth: 1
+  domain_from: structural
+  text_channel: true
+
+index:
+  neighbor_pool: 0
+
+ann_provider: flat

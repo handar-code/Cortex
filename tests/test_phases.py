@@ -594,5 +594,57 @@ class ANNBackendTest(unittest.TestCase):
             self.assertAlmostEqual(h["score"], sc, places=4)
 
 
+class ApiEndpointConfigTest(unittest.TestCase):
+    """本地 / 外部接口同构的回归锁（config.api.yaml）。
+
+    Ollama / llama.cpp / LM Studio / vLLM 与云端都是同一个 OpenAI 兼容
+    `/v1/embeddings` 接口，所以「用本地模型」不需要单独实现 LocalEmbedder，
+    只需在配置里换 api_base。关键约束：主向量轨与 attribution 隐式轨必须
+    **共用同一份接口参数**；否则隐式轨若重新 new 一个默认 EmbeddingConfig，
+    就会回落到云端地址，退化成「主向量走本地、隐式轨偷偷打云端」的半套配置。
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.cfg = Config.load(str(ROOT / "config.api.yaml"))
+
+    def test_config_api_yaml_parses(self):
+        self.assertEqual(self.cfg.embedding.provider, "siliconflow")
+        self.assertTrue(self.cfg.embedding.api_base.startswith("http"))
+        self.assertEqual(self.cfg.attribution.provider, "siliconflow")
+
+    def test_attribution_reuses_embedding_endpoint(self):
+        import doc_system.attribution as attr_mod
+        from unittest import mock
+        from doc_system.index import OfflineEmbedder, SiliconFlowEmbedder
+
+        cfg = Config.load(str(ROOT / "config.api.yaml"))
+        # 模拟用户切到本地端点（只改这两行）
+        cfg.embedding.api_base = "http://localhost:11434/v1/embeddings"
+        cfg.embedding.model = "bge-m3"
+
+        captured = []
+
+        def spy(ecfg):
+            captured.append(ecfg)
+            return OfflineEmbedder()  # 不真的联网，只检查传入的接口参数
+
+        with mock.patch.object(attr_mod, "get_embedder", side_effect=spy):
+            ingest(cfg, out_path=None)
+
+        self.assertTrue(captured, "attribution 未调用 get_embedder")
+        ecfg = captured[0]
+        self.assertEqual(ecfg.provider, "siliconflow")
+        self.assertEqual(ecfg.api_base, cfg.embedding.api_base, "隐式轨没复用 api_base，仍会打云端")
+        self.assertEqual(ecfg.model, cfg.embedding.model, "隐式轨 model 不一致")
+        self.assertEqual(ecfg.api_key_env, cfg.embedding.api_key_env)
+        self.assertEqual(ecfg.batch_size, cfg.embedding.batch_size)
+        self.assertEqual(ecfg.max_concurrency, cfg.embedding.max_concurrency)
+
+        # 主向量轨用同一份配置构造的客户端也指向同一端点
+        main = SiliconFlowEmbedder(api_key="local", api_base=cfg.embedding.api_base, model=cfg.embedding.model)
+        self.assertEqual(main.api_base, ecfg.api_base)
+
+
 if __name__ == "__main__":
     unittest.main()

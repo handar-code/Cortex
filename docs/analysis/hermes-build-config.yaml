@@ -1,0 +1,70 @@
+# 整 Hermes 建档标准配置（按 Cortex 标准 · 过程数据存于 cortex-runs/hermes-full/）
+# 三层裁剪：files_only(根级只吃顶层) + 显式子目录 root + blacklist + languages
+# 排除：114M context_system/、数千 .ts、构建产物（靠 files_only/黑名单/languages）
+project:
+  name: "hermes-agent"
+
+roots:
+  - path: "<target-project>"
+    files_only: true
+  - path: "<target-project>/agent"
+  - path: "<target-project>/gateway"
+  - path: "<target-project>/context_management"
+  - path: "<target-project>/hermes_db"
+  - path: "<target-project>/hermes_delegation"
+  - path: "<target-project>/acp_adapter"
+  - path: "<target-project>/cron"
+  - path: "<target-project>/legacy"
+  - path: "<target-project>/docs/design"
+
+blacklist:
+  - "**/__pycache__/**"
+  - "**/.venv/**"
+  - "**/node_modules/**"
+  - "**/.git/**"
+  - "**/*.generated.*"
+  - "**/*.gen.*"
+
+languages:
+  - name: python
+    extensions: [".py"]
+    extractor: python_ast
+  - name: plaintext
+    extensions: [".md", ".txt"]
+    extractor: plaintext
+
+triage:
+  test_patterns:
+    - "**/test_*.py"
+    - "**/*_test.py"
+    - "**/conftest.py"
+  generated_patterns:
+    - "**/*.generated.*"
+    - "**/*.gen.*"
+
+embedding:
+  provider: siliconflow
+  model: "BAAI/bge-m3"
+  api_base: "https://api.siliconflow.cn/v1/embeddings"
+  api_key_env: "SILICONFLOW_API_KEY"
+  batch_size: 32
+
+attribution:
+  enabled: true
+  provider: siliconflow
+  scope_depth: 1
+  domain_from: structural
+  text_channel: true
+
+index:
+  neighbor_pool: 512
+
+retrieval:
+  rerank: null
+  rerank_candidates: 20
+
+optional:
+  typedoc_site: false
+  pagefind: false
+  demo: false
+  mkdocs: false

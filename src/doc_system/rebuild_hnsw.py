@@ -5,10 +5,9 @@
 构建 hnswlib 近似最近邻索引并落盘为同目录的 `<stem>.hnsw`，同时写 `<stem>.meta.json`。
 
 用法：
-    cd <REPO_ROOT>
     export PYTHONPATH=src
-    python src/doc_system/rebuild_hnsw.py \
-        --index-json <CORTEX_RUNS_DIR>/index.json
+    python -m doc_system.rebuild_hnsw --index-json <path/to/index.json>
+    # 或设置环境变量 INDEX_JSON 后直接运行（见 main()）
 
 产物（与 index.json 同目录）：
     index.hnsw        hnswlib 原生索引文件（图 + 向量，可跨进程加载）
@@ -19,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import time
 from pathlib import Path
 
@@ -70,11 +70,12 @@ def rebuild(index_json: Path) -> dict:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Hermes index.json → hnsw 跨进程索引重建")
+    ap = argparse.ArgumentParser(description="index.json → hnsw 跨进程索引重建")
     ap.add_argument(
         "--index-json",
-        default="<CORTEX_RUNS_DIR>/index.json",
-        help="已落盘的 index.json 路径（含内嵌向量）",
+        default=os.environ.get("INDEX_JSON"),
+        required=not os.environ.get("INDEX_JSON"),
+        help="已落盘的 index.json 路径（含内嵌向量）；也可由环境变量 INDEX_JSON 提供",
     )
     args = ap.parse_args()
     info = rebuild(args.index_json)

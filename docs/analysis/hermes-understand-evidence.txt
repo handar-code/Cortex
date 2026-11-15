@@ -1,0 +1,128 @@
+
+========================================================================================
+Q: 系统如何组织与管理上下文，上下文超限后怎么处理
+========================================================================================
+[1] score=0.616  agent/lifecycle_observability.py:1  (None/None)  None
+     
+[2] score=0.607  legacy/miyuki.py:410  (None/None)  None
+     
+[3] score=0.596  context_management/memory_system/memories/USER.md:1  (None/None)  None
+     
+[4] score=0.588  design/conversation_loop_architecture.md:1  (None/None)  None
+     
+[5] score=0.584  agent/_ctx_merge_backup_20260824/injection_assembler.py:112  (None/None)  None
+     
+[6] score=0.584  agent/prompt_layer.py:529  (None/None)  None
+     
+
+========================================================================================
+Q: 上下文压缩在什么条件下被触发，有哪些压缩策略
+========================================================================================
+[1] score=0.596  hermes-agent/cli.py:11180  (None/None)  None
+     
+[2] score=0.585  agent/system_prompt.py:405  (None/None)  None
+     
+[3] score=0.577  gateway/run.py:19326  (None/None)  None
+     
+[4] score=0.571  agent/context_engine.py:163  (None/None)  None
+     
+[5] score=0.570  legacy/compressor_old/conversation_compression.py:1  (None/None)  None
+     
+[6] score=0.567  agent/auxiliary_client.py:662  (None/None)  None
+     
+
+========================================================================================
+Q: 对话历史如何做摘要与归纳
+========================================================================================
+[1] score=0.611  gateway/platforms/api_server.py:3497  (None/None)  None
+     
+[2] score=0.593  agent/copilot_acp_client.py:298  (None/None)  None
+     
+[3] score=0.585  hermes-agent/hermes_state.py:8099  (None/None)  None
+     
+[4] score=0.583  agent/context_compressor.py:5852  (None/None)  None
+     
+[5] score=0.577  agent/context_compressor.py:3781  (None/None)  None
+     
+[6] score=0.576  agent/conversation_compression.py:1867  (None/None)  None
+     
+
+========================================================================================
+Q: 记忆系统如何组织、存储和检索对话记忆
+========================================================================================
+[1] score=0.597  agent/conversation_compression.py:1867  (None/None)  None
+     
+[2] score=0.591  design/conversation_loop_architecture.md:3  (None/None)  None
+     
+[3] score=0.590  agent/system_prompt.py:1332  (None/None)  None
+     
+[4] score=0.588  design/conversation_loop_architecture.md:1  (None/None)  None
+     
+[5] score=0.587  agent/_ctx_merge_backup_20260824/system_prompt.py:1072  (None/None)  None
+     
+[6] score=0.586  agent/system_prompt.py:1222  (None/None)  None
+     
+
+========================================================================================
+Q: 会话 session 状态如何持久化与恢复
+========================================================================================
+[1] score=0.659  hermes-agent/run_agent.py:2671  (None/None)  None
+     
+[2] score=0.658  gateway/platforms/api_server.py:3497  (None/None)  None
+     
+[3] score=0.654  gateway/platforms/api_server.py:5213  (None/None)  None
+     
+[4] score=0.641  agent/relay_runtime.py:792  (None/None)  None
+     
+[5] score=0.639  gateway/platforms/api_server.py:3445  (None/None)  None
+     
+[6] score=0.636  design/session-lifecycle.md:1  (None/None)  None
+     
+
+========================================================================================
+Q: 上下文引擎如何以插件方式注册与切换
+========================================================================================
+[1] score=0.627  agent/prompt_layer.py:647  (None/None)  None
+     
+[2] score=0.627  agent/_ctx_merge_backup_20260824/injection_assembler.py:230  (None/None)  None
+     
+[3] score=0.612  hermes-agent/AGENTS.md:621  (None/None)  None
+     
+[4] score=0.600  gateway/platform_registry.py:1  (None/None)  None
+     
+[5] score=0.594  agent/_ctx_merge_backup_20260824/system_prompt.py:570  (None/None)  None
+     
+[6] score=0.594  agent/system_prompt.py:709  (None/None)  None
+     
+
+========================================================================================
+Q: 后台审查 / 自动审查流程做什么
+========================================================================================
+[1] score=0.632  design/QUICKREF.md:84  (None/None)  None
+     
+[2] score=0.623  design/agent-onboarding-doc-system-design.md:767  (None/None)  None
+     
+[3] score=0.621  design/agent-onboarding-doc-system-design.md:783  (None/None)  None
+     
+[4] score=0.606  agent/verification_stop.py:1  (None/None)  None
+     
+[5] score=0.605  context_management/background_review/review.py:1  (None/None)  None
+     
+[6] score=0.603  gateway/run.py:22083  (None/None)  None
+     
+
+========================================================================================
+Q: 配置与启动入口在哪里，主循环怎么跑
+========================================================================================
+[1] score=0.616  hermes-agent/AGENTS.md:621  (None/None)  None
+     
+[2] score=0.613  gateway/run.py:28626  (None/None)  None
+     
+[3] score=0.612  agent/secret_sources/command.py:328  (None/None)  None
+     
+[4] score=0.607  acp_adapter/entry.py:165  (None/None)  None
+     
+[5] score=0.602  gateway/platforms/bluebubbles.py:169  (None/None)  None
+     
+[6] score=0.601  gateway/platforms/whatsapp_cloud.py:217  (None/None)  None
+     

@@ -103,7 +103,22 @@ def attribute_catalog(
     # ---- 2) 向量：每个符号文本 → 向量；每个域 → 质心（域内符号向量均值） ----
     if embedder is None:
         provider = (acfg.provider if acfg else "offline")
-        embedder = get_embedder(EmbeddingConfig(provider=provider))
+        ecfg = getattr(config, "embedding", None) if config else None
+        if provider == "siliconflow" and ecfg is not None:
+            # 复用 embedding 段的完整接口参数（api_base / model / key / 并发），只覆盖
+            # provider。本地端点（Ollama / llama.cpp / LM Studio）与云端都是同一个
+            # OpenAI 兼容接口；否则这里 new 一个默认 EmbeddingConfig 会回落到硅基流动
+            # 云端地址，导致「主向量走本地、隐式轨偷偷打云端」的半套配置。
+            embedder = get_embedder(EmbeddingConfig(
+                provider=provider,
+                model=ecfg.model,
+                api_base=ecfg.api_base,
+                api_key_env=ecfg.api_key_env,
+                batch_size=ecfg.batch_size,
+                max_concurrency=ecfg.max_concurrency,
+            ))
+        else:
+            embedder = get_embedder(EmbeddingConfig(provider=provider))
     texts = [_symbol_text(s) for s in symbols]
     vecs = embedder.embed_many(texts)
 

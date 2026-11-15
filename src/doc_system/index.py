@@ -229,7 +229,7 @@ class HnswBackend(VectorBackend):
         except ImportError as e:  # noqa: BLE001
             raise RuntimeError(
                 "缺少 hnswlib 依赖：启用 ann_provider='hnsw' 前请先执行 "
-                "`pip install hnswlib`"
+                "`pip install \".[ann]\"`（或 `pip install hnswlib`）"
             ) from e
         if dim is None or dim <= 0:
             raise ValueError(f"HnswBackend 需要合法的维度 dim，收到: {dim!r}")

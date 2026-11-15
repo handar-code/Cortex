@@ -6,14 +6,15 @@
 - 取若干条真实向量做 query(k=5)，比较 hnsw 与 flat 的 top-k 集合重合度。
 
 用法：
-    cd <REPO_ROOT> && export PYTHONPATH=src
-    python scripts/verify_hnsw_load.py \
-        --index-json <CORTEX_RUNS_DIR>/index.json
+    export PYTHONPATH=src
+    python scripts/verify_hnsw_load.py --index-json <path/to/index.json>
+    # 或设置环境变量 INDEX_JSON 后直接运行
 """
 from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 
 from doc_system.index import FlatBackend, KnowledgeIndex
@@ -23,7 +24,9 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="验证 hnsw 跨进程加载与检索")
     ap.add_argument(
         "--index-json",
-        default="<CORTEX_RUNS_DIR>/index.json",
+        default=os.environ.get("INDEX_JSON"),
+        required=not os.environ.get("INDEX_JSON"),
+        help="已落盘的 index.json 路径；也可由环境变量 INDEX_JSON 提供",
     )
     ap.add_argument("--k", type=int, default=5)
     ap.add_argument("--probe", type=int, default=20, help="抽样多少条向量做查询")
