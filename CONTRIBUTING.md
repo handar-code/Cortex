@@ -5,8 +5,8 @@
 ## 本地开发
 
 ```bash
-git clone https://github.com/your-org/cortex.git
-cd cortex
+git clone https://github.com/handar-code/Cortex.git
+cd Cortex
 
 # 最小安装（核心功能，够跑 offline 全链路）
 pip install -e .
@@ -15,6 +15,8 @@ pip install -e .
 pip install -e ".[ann]"
 
 # 跑测试（无需任何 API key）
+# pytest 属于 dev extra，需显式安装
+pip install -e ".[dev]"
 pytest -q          # 期望 43 passed
 ```
 

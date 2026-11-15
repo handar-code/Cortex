@@ -130,8 +130,8 @@ cortex --help
 ```bash
 cd ~/Desktop/cortex
 
-# 创建远端后推送（把 your-org/cortex 换成你的实际仓库地址）
-git remote add origin git@github.com:your-org/cortex.git
+# 创建远端后推送（本仓远端为 https://github.com/handar-code/Cortex.git）
+git remote add origin https://github.com/handar-code/Cortex.git
 git push -u origin main
 ```
 

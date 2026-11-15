@@ -45,10 +45,10 @@ dev = ["pytest>=7.4"]
 # 由标准库 urllib 实现，因此 **无需额外第三方依赖**，改 api_base 即可切换。
 
 [project.urls]
-Homepage = "https://github.com/your-org/cortex"
-Repository = "https://github.com/your-org/cortex"
-Issues = "https://github.com/your-org/cortex/issues"
-Changelog = "https://github.com/your-org/cortex/blob/main/docs/RELEASING.md"
+Homepage = "https://github.com/handar-code/Cortex"
+Repository = "https://github.com/handar-code/Cortex"
+Issues = "https://github.com/handar-code/Cortex/issues"
+Changelog = "https://github.com/handar-code/Cortex/blob/main/docs/RELEASING.md"
 
 # 独立命令行入口：pip install 后可直接用 `cortex <子命令>`，无需再记 python -m。
 # 保留 `doc-system` 作为兼容别名，两者指向同一 main()。
