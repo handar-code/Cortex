@@ -30,7 +30,7 @@
 3. **git 式版本化** —— 每次重算 = 一次提交，强制 `change_reason`、可回滚、`active` 标记已发布版，并兜住"代码改了但 catalog 没跟上"的漂移窗口。
 4. **零人可运行** —— 全链路离线、零密钥、零人工介入即可跑通；AI 全自主为默认，人类审核是可选附加层。
 
-**核心指标**（实测，见 [`docs/test_report.md`](docs/test_report.md)）：近万文件的大型项目 → 401 文件 / **10512 符号** / 10 域分片 / ~3.3s / 溯源覆盖率 1.0 / 回归 43 passed。
+**核心指标**（实测，见 [`docs/test_report.md`](docs/test_report.md)）：近万文件的大型项目 → 401 文件 / **10512 符号** / 10 域分片 / ~3.3s / 溯源覆盖率 1.0 / 回归 43 passed（该 e2e 报告时的数值）。
 
 ## 为什么不是"再写一份文档"
 
@@ -53,6 +53,7 @@
 | **查询时重排** | corpus 用离线哈希建索引、查询用 bge-m3 重排（`retrieval.rerank: siliconflow`），按次计费、零额外离线成本 |
 | **渲染产物** | MkDocs 主站（人读）+ Markdown/llms.txt 分片（Agent 读）；可选产物默认关 |
 | **读写分离** | 读 = Skill 读指南（零写）/ 写 = MCP git 式提交，双通道物理分离 |
+| **隐式契约缺陷检测** | `cortex defects` 静态检出「反向读模块属性」这类契约断裂——catalog 告诉你"谁调用了谁"，defects 告诉你"契约被违反了" |
 
 ## 依赖
 
@@ -89,7 +90,7 @@ pip install -e ".[ann]"          # 可选：加 hnswlib + numpy，启用 hnsw �
 | 5 分钟跑通全链路、无 key | 下面「5 分钟 Quickstart」+ `config.quickstart.yaml`（offline） |
 | 生产部署、真语义检索 | `config.example.yaml`（siliconflow / BAAI/bge-m3）+ `SILICONFLOW_API_KEY` |
 | 大项目加速向量检索 | `--ann-provider hnsw` 或配置 `ann_provider: hnsw`（需 `pip install ".[ann]"`） |
-| 确认改动没坏 | `pytest -q`（43 passed，无 key 也全绿）；push 后 GitHub Actions 自动跑 |
+| 确认改动没坏 | `pytest -q`（52 passed，无 key 也全绿）；push 后 GitHub Actions 自动跑 |
 | 查全部命令 | `cortex --help` ｜ 下方「完整 CLI 参考」 |
 | 发布前安全核查 | `docs/RELEASING.md`（密钥 / 发布源 / 依赖 / 验证 / 发版） |
 
@@ -257,7 +258,7 @@ cortex rollback  --version v1                 # 回滚 active
 ## 测试与 CI
 
 ```bash
-pytest -q                 # 43 passed，无需 API key
+pytest -q                 # 52 passed，无需 API key
 python -m unittest discover -s tests   # 等价（unittest 风格亦可跑）
 ```
 
