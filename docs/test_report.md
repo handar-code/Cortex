@@ -1,10 +1,10 @@
 # 真实项目端到端测试报告 · 目标项目 = hermes-agent
 
 - 测试日期：2026-11-15
-- 被测系统：`<REPO_ROOT>/`（通用项目知识库文档系统，Phase 1~6 全实现）
-- 目标项目：`<HOME>/Hermes/hermes-agent/`（真实的近万文件大型项目）
-- **产物隔离**：全部测试产物只写入 `<REPO_ROOT>-e2e/artifacts/`；  
-  `config.yaml`、`key(.env)`、本报告在 `<REPO_ROOT>-e2e/`。  
+- 被测系统：`<repo>/`（通用项目知识库文档系统，Phase 1~6 全实现）
+- 目标项目：`<target-project>/`（真实的近万文件大型项目）
+- **产物隔离**：全部测试产物只写入 `<e2e-artifacts>/artifacts/`；  
+  `config.yaml`、`key(.env)`、本报告在 `<e2e-artifacts>/`。  
   **未向 hermes-agent 工作区写入任何文件**（`git status` 校验为空），源码仓保持干净。
 
 ---

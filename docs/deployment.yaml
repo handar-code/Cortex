@@ -2,7 +2,7 @@
 # 本文件是「目标项目专属配置」，doc-system 系统代码不含任何项目硬编码。
 # roots 用绝对路径指向 hermes-agent 的根级核心代码 + 一组代表性模块；
 # 仍排除 114M 的 context_system/ 与数千 ts（未声明语言），靠 files_only / 黑名单 / languages 三层裁剪。
-# 所有产物一律落在 <REPO_ROOT>-e2e/artifacts/，绝不写入 hermes-agent，也不写入 doc-system 源码仓。
+# 所有产物一律落在 <e2e-artifacts>/artifacts/，绝不写入 hermes-agent，也不写入 doc-system 源码仓。
 
 project:
   name: "hermes-agent"
@@ -10,17 +10,17 @@ project:
 roots:
   # 根级核心代码：cli.py(852K) / hermes_state.py(456K) / run_agent.py(408K) 等 19 个 .py
   # + AGENTS.md / README.md。files_only:true = 只吃该层文件，不递归进巨型子目录。
-  - path: "<HOME>/Hermes/hermes-agent"
+  - path: "<target-project>"
     files_only: true
-  - path: "<HOME>/Hermes/hermes-agent/agent"
-  - path: "<HOME>/Hermes/hermes-agent/gateway"
-  - path: "<HOME>/Hermes/hermes-agent/context_management"
-  - path: "<HOME>/Hermes/hermes-agent/hermes_db"
-  - path: "<HOME>/Hermes/hermes-agent/hermes_delegation"
-  - path: "<HOME>/Hermes/hermes-agent/acp_adapter"
-  - path: "<HOME>/Hermes/hermes-agent/cron"
-  - path: "<HOME>/Hermes/hermes-agent/legacy"
-  - path: "<HOME>/Hermes/hermes-agent/docs/design"
+  - path: "<target-project>/agent"
+  - path: "<target-project>/gateway"
+  - path: "<target-project>/context_management"
+  - path: "<target-project>/hermes_db"
+  - path: "<target-project>/hermes_delegation"
+  - path: "<target-project>/acp_adapter"
+  - path: "<target-project>/cron"
+  - path: "<target-project>/legacy"
+  - path: "<target-project>/docs/design"
 
 blacklist:
   - "**/__pycache__/**"
