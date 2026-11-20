@@ -1,6 +1,6 @@
 # Contributing to Cortex
 
-感谢参与！这份文档说明本地怎么跑、怎么提 PR、以及项目的几条硬约束。
+本文档说明本地运行方式、Pull Request 流程与项目约束。
 
 ## 本地开发
 
@@ -17,7 +17,7 @@ pip install -e ".[ann]"
 # 跑测试（无需任何 API key）
 # pytest 属于 dev extra，需显式安装
 pip install -e ".[dev]"
-pytest -q          # 期望 43 passed
+pytest -q          # 期望 60 passed
 ```
 
 **不要提交 `.env`**（含真实 API key）。项目根的 `.env` 已被 `.gitignore` 排除；密钥只从环境变量 `SILICONFLOW_API_KEY` 读取。

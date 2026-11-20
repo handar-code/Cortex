@@ -1,27 +1,22 @@
 # Cortex
 
-**A universal project knowledge-base documentation system** · Compiles any codebase into a structured, searchable, traceable knowledge base for agents.
+*A universal project knowledge-base documentation system · Compiles codebases into structured, searchable, traceable knowledge bases*
 
 [English](README.en.md) · [简体中文](README.md)
 
 [![CI](https://img.shields.io/github/actions/workflow/status/handar-code/Cortex/ci.yml?branch=main&label=CI&logo=github)](https://github.com/handar-code/Cortex/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![PyPI](https://img.shields.io/badge/pip-doc--system-orange)](pyproject.toml)
 
-> Give an agent that knows nothing about a codebase a **structured, searchable, traceable** knowledge base in minutes.
-> The system is **project-agnostic** — structure, languages, triage rules, and governance are all driven by `config.yaml`; zero hardcoding.
+Cortex compiles a codebase into a structured knowledge base — symbol catalog, attribution, version snapshots, and vector index — for agent retrieval with direct evidence chains. Project structure, languages, triage rules, and governance are driven by `config.yaml`, with no project-specific hardcoding.
 
-- PyPI package: `doc-system` · CLI command: `cortex` (alias: `doc-system`)
-- This repository is the single canonical home of Cortex; development is release.
+Installing from source provides the `cortex` command.
 
 ---
 
-## What it is (30 seconds)
+## Overview
 
-**The problem**: When an agent takes over an unfamiliar codebase, the default is "let it read the code" — but reading a 30,000-line giant file is slow, burns context, and still leaves no structure or traceability.
-
-**Cortex's approach**: **compile** the codebase into a structured knowledge base, so the agent looks things up instead of reading everything.
+Agents taking over an unfamiliar codebase typically read source directly, which is costly and offers limited traceability. Cortex compiles a codebase into a structured knowledge base that returns symbols, snippets, and provenance on retrieval.
 
 ```
 codebase ──ingest──▶ symbol catalog ──▶ attribution (@domain) ──▶ vector index
@@ -31,11 +26,11 @@ codebase ──ingest──▶ symbol catalog ──▶ attribution (@domain) �
                               agent retrieval (structured evidence chain)
 ```
 
-**Four ideas in a nutshell**:
+**Core features**:
 
-1. **Dual-track attribution** — `@domain` explicit tags ‖ implicit vector soft-assignment, two **equal, parallel tracks**. Real projects rarely have hand-written tags, so domain is never empty just because tags are missing.
-2. **Three channels side by side** — retrieval returns `annotation_hits` (explicit keys) / `annotation_text_hits` (docstring terms) / `vector_hits` (vector neighbors), **no pre-fusion**, left to the agent to judge.
-3. **git-style versioning** — every recompute is a commit with a mandatory `change_reason`, rollback support, `active` marking the published version, and a guard for the window where "code changed but catalog didn't".
+1. **Dual-track attribution** — `@domain` explicit tags ‖ implicit vector soft-assignment, two equal, parallel tracks. Domain assignment does not depend on hand-written tags; directory scope and implicit vector assignment provide attribution when tags are absent.
+2. **Three channels side by side** — retrieval returns `annotation_hits` (explicit keys) / `annotation_text_hits` (docstring terms) / `vector_hits` (vector neighbors), without pre-fusion; the agent adjudicates.
+3. **git-style versioning** — every recompute is a commit with a mandatory `change_reason`, rollback support, `active` marking the published version, and detects drift between code and catalog.
 4. **Zero-config runnable** — the full pipeline runs offline, key-free, and without human intervention.
 
 **Measured figures**: a ~10k-file project → 401 files / **10,512 symbols** / 10 domain shards / ~3.3s / traceability coverage 1.0.
@@ -51,11 +46,11 @@ codebase ──ingest──▶ symbol catalog ──▶ attribution (@domain) �
 | **Query-time reranking** | corpus indexed with offline hashing, rerank with bge-m3 at query time (`retrieval.rerank: siliconflow`), pay-per-use, zero extra offline cost |
 | **Render artifacts** | MkDocs site (for humans) + Markdown/llms.txt shards (for agents); optional artifacts off by default |
 | **Read/write separation** | read = Skill guide (no writes) / write = MCP git-style commits, physically separated |
-| **Implicit contract defect detection** | `cortex defects` statically detects contract breaks such as "reverse-reading module attributes" — catalog tells you "who calls whom", defects tells you "the contract was violated" |
+| **Implicit contract defect detection** | `cortex defects` statically detects contract breaks; catalog records call relationships, defects reports violations |
 
 ## Dependencies
 
-**Only one core dependency**:
+**Core dependency**:
 
 ```
 pyyaml>=6.0
@@ -81,27 +76,27 @@ pip install -e ".[ann]"          # optional: add hnswlib + numpy for the hnsw ba
 
 ---
 
-## §0 Quick reference (come back here)
+## Quick index
 
-| I want to… | Use this |
+| Task | Command or config |
 |---|---|
-| Run the full pipeline in 5 minutes, no key | "5-minute Quickstart" below + `config.quickstart.yaml` (offline) |
+| Run the pipeline locally (no key) | "5-minute Quickstart" + `config.quickstart.yaml` (offline) |
 | Production deployment, true semantic retrieval | `config.example.yaml` (siliconflow / BAAI/bge-m3) + `SILICONFLOW_API_KEY` |
 | Speed up vector search on large projects | `--ann-provider hnsw` or set `ann_provider: hnsw` (requires `pip install ".[ann]"`) |
 | Verify a change didn't break anything | `pip install -e ".[ann,dev]" && pytest -q` (60 passed, all green without a key); GitHub Actions runs on push |
-| See all commands | `cortex --help` · "Full CLI reference" below |
+| List all commands | `cortex --help` · "Full CLI reference" |
 | Report a security issue | [`SECURITY.md`](SECURITY.md) (private vulnerability report; do not open a public Issue) |
 
-**Three key concepts** (expanded below):
-- **Two embedder tiers** = `offline` (deterministic hash fallback) / general OpenAI-compatible API client (`siliconflow` cloud or local model server). Decides **how corpus vectors are computed**.
-- **ANN backend** = `flat` (brute-force cosine) / `hnsw` (hnswlib approximate neighbor). Decides **how to find nearest neighbors at query time**, orthogonal to the embedder and freely combinable.
-- **Three channels side by side** = retrieval returns `annotation_hits` (`@domain` explicit keys) / `annotation_text_hits` (docstring terms) / `vector_hits` (vector neighbors), **no pre-fusion**, left to the agent to judge.
+**Key concepts**:
+- **Embedder tiers** = `offline` (deterministic hash) / OpenAI-compatible API client (`siliconflow` cloud or local server). Determines how corpus vectors are computed.
+- **ANN backend** = `flat` (brute-force cosine) / `hnsw` (hnswlib approximate neighbor). Determines nearest-neighbor retrieval at query time, orthogonal to the embedder.
+- **Three channels** = retrieval returns `annotation_hits` (`@domain` keys) / `annotation_text_hits` (docstring terms) / `vector_hits` (vector neighbors), without pre-fusion.
 
 ---
 
 ## 5-minute Quickstart (zero config · no API key · offline)
 
-Uses `offline` deterministic hashing throughout — no key, no network, reproducible results. A synthetic sample project ships at `fixtures/sample_project/`.
+This flow uses `offline` deterministic hashing — no key, no network, reproducible results. A synthetic sample project is provided at `fixtures/sample_project/`.
 
 ```bash
 # 1) Install (Python >= 3.10)
@@ -151,7 +146,7 @@ cortex index --config "$CFG" --store .docstore --ann-provider hnsw \
 | Tier0 | `offline` (default) | `OfflineEmbedder` deterministic hash | 256 | none (stdlib only) | none (term hash) | offline / CI / no key / reproducible fallback |
 | Tier1 | `siliconflow` (can point local) | `SiliconFlowEmbedder` · BAAI/bge-m3 | 1024 | HTTP client | true semantics, cross-lingual synonyms | production ingest: full corpus true semantics |
 
-**Local and cloud are isomorphic**: local model servers (Ollama / llama.cpp server / LM Studio / vLLM) and cloud (SiliconFlow) expose the same OpenAI-compatible interface — `POST /v1/embeddings`, with identical request `{model, input, encoding_format}` and response `{data:[{index, embedding}]}`. **So no separate local embedder is needed** — just change `api_base` in `config.api.yaml`:
+**Local and cloud share one interface**: local model servers (Ollama / llama.cpp server / LM Studio / vLLM) and cloud (SiliconFlow) expose the same OpenAI-compatible interface — `POST /v1/embeddings`, with identical request `{model, input, encoding_format}` and response `{data:[{index, embedding}]}`. No separate local embedder is required; change `api_base` in `config.api.yaml`:
 
 ```yaml
 # Local endpoint
@@ -164,7 +159,7 @@ embedding:
 
 A complete runnable config is at [`config.api.yaml`](config.api.yaml) (comments show which lines to change for local vs cloud). **Keep bge-m3 locally to preserve 1024 dims** — otherwise `SiliconFlowEmbedder.dim=1024` won't match the actual vector dimension and hnsw build will fail.
 
-**Why this layering**: `offline` guarantees the full pipeline runs at zero cost in any environment (CI, no network, fresh clone) — the "floor you can always fall back to"; the true-semantic tier provides semantic quality (measured cross-lingual synonym cosine ~0.81–0.87 vs unrelated ~0.44; offline hashing is always 0 and cannot distinguish). SiliconFlow is currently free and unthrottled, suitable for embedding the whole corpus at once.
+**Layering rationale**: `offline` guarantees the full pipeline runs at zero cost in any environment (CI, no network, fresh clone) — the "floor you can always fall back to"; the true-semantic tier provides semantic quality (measured cross-lingual synonym cosine ~0.81–0.87 vs unrelated ~0.44; offline hashing is always 0 and cannot distinguish). SiliconFlow is currently free and unthrottled, suitable for embedding the whole corpus at once.
 
 **Batch + concurrency**: `embed_many(texts)` groups requests by `batch_size`, runs multiple batches concurrently with `ThreadPoolExecutor` (`max_concurrency`, default 8), and reorders results by both `data[].index` and batch position so output order matches input; failures raise a clear `RuntimeError`. Long text is truncated to `MAX_EMBED_CHARS=6000` to avoid API rejection from bge-m3's context limit (catalog still stores the full text; only embedding input is truncated).
 
@@ -185,7 +180,7 @@ Orthogonal to the embedder: the embedder decides what the vectors are, the ANN b
 
 - Abstracted as a `VectorBackend` base class: `build(vectors)` / `query(vec, k) -> [(score, idx)]` / `save_index` / `load_index`. `retrieve()`'s **external signature and return structure are unchanged** — only the underlying nearest-neighbor computation differs.
 - `hnsw` supports **cross-process persistence**: `save()` additionally writes `<stem>.hnsw` + `<stem>.meta.json` (recording `dim` / `n`), so the next `KnowledgeIndex.load(ann_provider="hnsw")` calls `load_index` directly — zero rebuild, zero API cost.
-- To switch an existing `index.json` to hnsw without recomputing vectors: `python scripts/rebuild_hnsw.py` reuses existing vectors.
+- To switch an existing `index.json` to hnsw without recomputing vectors, run `python scripts/rebuild_hnsw.py` to reuse existing vectors.
 - On small datasets `hnsw` and `flat` top-k sets fully overlap (sufficient `ef=n` recall), locked by `tests/test_phases.py::ANNBackendTest`.
 
 ---
@@ -234,7 +229,7 @@ pytest -q                 # 60 passed, no API key needed
 python -m unittest discover -s tests   # equivalent (unittest style also works)
 ```
 
-- **No-key all-green mechanism**: `tests/conftest.py`, when `SILICONFLOW_API_KEY` is unset, forces both `index` and `attribution` `get_embedder` to `OfflineEmbedder` at import time; when a key is set it keeps the real provider, also validating the true-semantic path. Placing this at import time (rather than a function-level fixture) covers `unittest.TestCase.setUpClass`.
+- **No-key mechanism**: `tests/conftest.py`, when `SILICONFLOW_API_KEY` is unset, forces both `index` and `attribution` `get_embedder` to `OfflineEmbedder` at import time; when a key is set it keeps the real provider, also validating the true-semantic path. Placing this at import time (rather than a function-level fixture) covers `unittest.TestCase.setUpClass`.
 - `tests/test_integration_e2e.py`: offline full pipeline (ingest → flat/hnsw dual index → retrieval), asserting vector/annotation-text dual-channel hits and flat-hnsw top-5 overlap ≥2.
 - **GitHub Actions** (`.github/workflows/ci.yml`): triggered on push to `main` + PRs, Python 3.10 / 3.11 / 3.12 / 3.13 matrix, `pip install .[ann]` then `pytest tests -q`. To validate the true-semantic path, configure a `SILICONFLOW_API_KEY` secret and uncomment the `env` block in ci.yml.
 - `pyproject.toml`'s `testpaths = ["tests"]` prevents the sample `.py` files in `fixtures/sample_project/` from being collected as tests.
