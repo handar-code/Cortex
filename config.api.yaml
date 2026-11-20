@@ -18,7 +18,7 @@
 #   key:      本地服务不校验 token，在 .env 放任意占位值即可，例如
 #             SILICONFLOW_API_KEY=local
 #   注：换本地端点后，attribution 隐式轨会自动跟随同一份 api_base（见 attribution.py），
-#       不会出现「主向量走本地、隐式轨偷偷打云端」的半套配置。
+#       因此主向量与隐式轨共用同一服务配置。
 #
 # 直接跑（云端需有效 key；本地按上面改 3 行）：
 #   cortex ingest   --config config.api.yaml --out catalog.json

@@ -6,7 +6,7 @@ body:
     attributes:
       label: 改了什么
       placeholder: |
-        - 修复：切本地向量端点时，隐式轨会偷偷回落云端（attribution.py）
+        - 修复：切换向量端点时归因轨与服务配置不一致（attribution.py）
         - 新增：支持把 index.json 用环境变量传入（rebuild_hnsw.py）
     validations:
       required: true

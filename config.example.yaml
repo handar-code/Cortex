@@ -47,7 +47,7 @@ triage:
 #   offline      确定性哈希向量，纯标准库、零依赖、零成本、可复现（断网/无 key/零配置兜底）
 #   siliconflow  BAAI/bge-m3 语义向量，经硅基流动 API（1024 维；当前免费、不限次、不限速）
 #   local        （可选扩展）本地向量模型（sentence-transformers / Ollama / llama.cpp），
-#                真语义 + 数据不出本机 + 断网可用，但需装运行时与权重（本机 M5 Air 10 核 GPU 跑得动）
+#                真语义 + 数据不出本机 + 断网可用，但需装运行时与权重（依赖本地 GPU 算力）
 # 推荐：能联网且有 key → siliconflow（corpus 全量真语义，本机零负担）；否则 offline 兜底。
 # API key 不写进配置文件：从环境变量 SILICONFLOW_API_KEY 或项目根 .env 读取。
 embedding:

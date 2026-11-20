@@ -36,5 +36,5 @@
 
 ## 关于 API key 的配置
 
-本地如何安全配置真语义向量（云端 key 或本地模型服务），
-见 [`docs/LOCAL_CONFIG.md`](docs/LOCAL_CONFIG.md)。
+本仓库的 `.env.example` 仅提供占位变量，不含任何真实值或配置说明。
+具体环境的 key 配置属于个性化设置，不在公开仓库范围内。

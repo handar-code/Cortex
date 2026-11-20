@@ -297,7 +297,7 @@ _get_plugin_cmd_handler_names`、`hermes-agent/AGENTS.md:413 CLI Architecture (c
   `OfflineEmbedder` 是纯本地词袋哈希（零依赖/零成本/可复现兜底），`SiliconFlowEmbedder` 直接把
   内容送 BAAI/bge-m3 真语义向量——**内容一直被用，只是默认档是哈希**。
 - 用户告知：**硅基流动 bge-m3 免费、不限次、不限速**。这直接推翻 §11 选 C 不选 B 的**唯一理由**（API 成本/限速）。
-- 用户另指出本机 M5 Air 有 **10 核 GPU，跑 9B 本地模型都不烫、本地向量反而比云端快** → 本地模型作为后续可选档（见 12.4）。
+- 另有评估认为本地 GPU 算力足以运行中小模型、且本地向量可避免网络往返 → 本地模型作为后续可选档（见 12.4）。
 
 ### 12.2 决策（已落地）
 - **e2e `config.yaml`**：`embedding.provider=siliconflow`、`attribution.provider=siliconflow`、`retrieval.rerank=null`。
@@ -310,12 +310,12 @@ _get_plugin_cmd_handler_names`、`hermes-agent/AGENTS.md:413 CLI Architecture (c
 | 档 | provider | 语义 | 位置 | 依赖 | 本机负担 | 适用 |
 |---|---|---|---|---|---|---|
 | Tier0 | `offline` | 弱（词袋） | 本地 | 零（仅标准库） | 轻 | 断网/无 key/零配置兜底 |
-| Tier1 | `local` | 真 | 本地 | 重（运行时+权重） | 重但本机 M5 Air 跑得动 | 隐私/断网语义（后续扩展） |
+| Tier1 | `local` | 真 | 本地 | 重（运行时+权重） | 重（依赖本地算力） | 隐私/断网语义（后续扩展） |
 | Tier2 | `siliconflow` | 真 | 云端 | 需 key+网络 | 最凉（算力在云端） | **当前默认**：免费不限速、本机零负担 |
 
-- `local` 为**可选扩展**：需新增 `LocalEmbedder`（sentence-transformers / Ollama / llama.cpp）+ 工厂分支 + provider 字符串，几行事，不动三通道结构。用户本机 10 核 GPU 跑得动，且本地向量比云端快、数据不出本机。本轮未实现，留作后续档。
+- `local` 为**可选扩展**：需新增 `LocalEmbedder`（sentence-transformers / Ollama / llama.cpp）+ 工厂分支 + provider 字符串，几行事，不动三通道结构。本地向量可避免网络往返、数据不出本机。本轮未实现，留作后续档。
 
 ### 12.4 验证状态
 - 单元回归：改动为配置 + 文档；`EmbeddingConfig` 代码默认保持 `offline`，`get_embedder(None)`→`OfflineEmbedder` 契约不变，**27/27 通过**（与切 siliconflow 前一致，单测不依赖 API）。
-- e2e 全量 bge-m3 建索引 + 语义检索：待联网 .env key 跑通后补测（用户已确认免费不限速；若本机 M5 Air 后续切本地模型则更快）。
+- e2e 全量 bge-m3 建索引 + 语义检索：待联网 .env key 跑通后补测（已确认免费不限速；若后续切本地模型则可省去网络往返）。
 - 隔离边界：仅改 `doc-system/` 源码与 `doc-system-e2e/` 配置/文档；**hermes-agent 工作区零污染**。

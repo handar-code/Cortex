@@ -554,7 +554,7 @@ result_item = {
 > bge-m3 时查询即真语义、重排冗余）。代码默认仍留 `offline`（零配置即跑、单测无 key 可过），
 > 真实默认在 `config.yaml` 落 siliconflow；offline 作断网/零配置兜底。三档 provider：
 > `offline`（本地哈希，零依赖）｜`siliconflow`（云端 bge-m3，免费不限速，本机零负担）｜
-> `local`（可选扩展：本地向量模型，真语义+数据不出本机+断网可用，需装运行时与权重；本机 M5 Air 10 核 GPU 跑得动）。
+> `local`（可选扩展：本地向量模型，真语义+数据不出本机+断网可用，需装运行时与权重）。
 > 详见 TEST_REPORT.md §11 / §12。
 
 ### 13.5 主线五 · 生命周期与维护（✅ 闭环）
