@@ -1,5 +1,10 @@
 # Cortex · 通用项目知识库文档系统
 
+[![CI](https://img.shields.io/github/actions/workflow/status/handar-code/Cortex/ci.yml?branch=main&label=CI&logo=github)](https://github.com/handar-code/Cortex/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![PyPI](https://img.shields.io/badge/pip-doc--system-orange)](pyproject.toml)
+
 > 让一个对目标项目一无所知的新 Agent，在几分钟内获得**结构化、可检索、可追溯**的知识库。
 > 系统**不耦合任何具体项目**——项目结构、语言、甄别规则、治理策略全部由 `config.yaml` 驱动，代码零硬编码。
 
@@ -89,10 +94,12 @@ pip install -e ".[ann]"          # 可选：加 hnswlib + numpy，启用 hnsw �
 |---|---|
 | 5 分钟跑通全链路、无 key | 下面「5 分钟 Quickstart」+ `config.quickstart.yaml`（offline） |
 | 生产部署、真语义检索 | `config.example.yaml`（siliconflow / BAAI/bge-m3）+ `SILICONFLOW_API_KEY` |
+| **本机配 key / 切本地模型** | **[`docs/LOCAL_CONFIG.md`](docs/LOCAL_CONFIG.md)** + `.env.example`（离线→真语义升级路径） |
 | 大项目加速向量检索 | `--ann-provider hnsw` 或配置 `ann_provider: hnsw`（需 `pip install ".[ann]"`） |
-| 确认改动没坏 | `pytest -q`（52 passed，无 key 也全绿）；push 后 GitHub Actions 自动跑 |
+| 确认改动没坏 | `pip install -e ".[ann,dev]" && pytest -q`（60 passed，无 key 也全绿）；push 后 GitHub Actions 自动跑 |
 | 查全部命令 | `cortex --help` ｜ 下方「完整 CLI 参考」 |
 | 发布前安全核查 | `docs/RELEASING.md`（密钥 / 发布源 / 依赖 / 验证 / 发版） |
+| 报告安全问题 | [`SECURITY.md`](SECURITY.md)（私有漏洞报告入口，请勿开公开 Issue） |
 
 **三个关键概念（后面会展开）：**
 - **两档 embedder 梯子** = `offline`（确定性哈希兜底）/ 通用 OpenAI 兼容接口客户端（`siliconflow` 云端 或 本地模型服务）。决定**语料向量怎么算**。
@@ -288,3 +295,5 @@ python -m unittest discover -s tests   # 等价（unittest 风格亦可跑）
 - MkDocs / PageFind / TypeDoc 站等附加产物走 config 开关（默认关），离线不构建、由 CI/人工启用。
 
 完整设计稿：[`docs/design.md`](docs/design.md)（999 行，含 §0 一页速查 · 八条主线 · §12 归因双轨 · §13 生命周期 · §14 宪法自举）；一页速查另见 [`docs/quickref.md`](docs/quickref.md)。
+
+本地配置与安全：[`docs/LOCAL_CONFIG.md`](docs/LOCAL_CONFIG.md)（离线→真语义升级路径）、[`SECURITY.md`](SECURITY.md)（漏洞报告入口）。
