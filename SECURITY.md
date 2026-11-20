@@ -29,7 +29,7 @@
 - `.env`、`*.local.yaml` 均在 `.gitignore` 中排除
 - 仓库内只保留 `.env.example` 占位模板，不含任何真实值
 - CI 强制 offline 模式（`tests/conftest.py`），无 key 也能完整验证
-- 发布前的安全核查清单见 [`docs/RELEASING.md`](docs/RELEASING.md)
+- 发布前需确认工作区与 git 历史均无明文密钥、无本机绝对路径
 
 如果你在仓库历史中发现了疑似泄露的密钥，请立即通过上面的私有入口报告，
 不要提交公开 Issue 或 PR。

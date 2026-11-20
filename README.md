@@ -1,4 +1,8 @@
-# Cortex · 通用项目知识库文档系统
+# Cortex
+
+**通用项目知识库文档系统** · Compiles any codebase into a structured, searchable, traceable knowledge base for agents.
+
+[English](README.en.md) · [简体中文](README.md)
 
 [![CI](https://img.shields.io/github/actions/workflow/status/handar-code/Cortex/ci.yml?branch=main&label=CI&logo=github)](https://github.com/handar-code/Cortex/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue)](https://www.python.org/)
@@ -9,8 +13,7 @@
 > 系统**不耦合任何具体项目**——项目结构、语言、甄别规则、治理策略全部由 `config.yaml` 驱动，代码零硬编码。
 
 - pip 包名：`doc-system` ｜ 安装后命令：`cortex`（兼容别名 `doc-system`）
-- **本仓库 = Cortex 唯一主仓**（开发即发布）；发布口径见 [`docs/RELEASING.md`](docs/RELEASING.md)，仓库关系见 [`ARCHIVED.md`](ARCHIVED.md)
-- 实现范围：设计稿《面向 Agent 接手的项目知识库：文档系统设计方案》Phase 1~6 全部落地 → 完整设计稿见 [`docs/design.md`](docs/design.md)
+- 本仓库是 Cortex 的唯一主仓，开发即发布。
 
 ---
 
@@ -33,19 +36,9 @@
 1. **归因双轨** —— `@domain` 显式标注 ‖ 向量隐式软归属，两轨**平等并行、互不为主**。真实项目没人会手写标注，所以 domain 永不因缺手写标注而全空。
 2. **三通道并列** —— 检索返回 `annotation_hits`（显式键）/ `annotation_text_hits`（docstring 词项）/ `vector_hits`（向量近邻），**不预融合**，交 Agent 裁决。
 3. **git 式版本化** —— 每次重算 = 一次提交，强制 `change_reason`、可回滚、`active` 标记已发布版，并兜住"代码改了但 catalog 没跟上"的漂移窗口。
-4. **零人可运行** —— 全链路离线、零密钥、零人工介入即可跑通；AI 全自主为默认，人类审核是可选附加层。
+4. **零配置可运行** —— 全链路离线、零密钥、零人工介入即可跑通。
 
-**核心指标**（实测，见 [`docs/test_report.md`](docs/test_report.md)）：近万文件的大型项目 → 401 文件 / **10512 符号** / 10 域分片 / ~3.3s / 溯源覆盖率 1.0 / 回归 43 passed（该 e2e 报告时的数值）。
-
-## 为什么不是"再写一份文档"
-
-| | 传统手写文档 | Cortex |
-|---|---|---|
-| 代码一改 | 立刻过期 | 增量重算 + 快照对账，自动发现漂移 |
-| 新 Agent 接手 | 靠人复述 / 靠翻文档 | 查结构化索引，直接拿证据链 |
-| 上下文成本 | 全量文档进 prompt | 只取命中的符号与片段 |
-| 可追溯性 | 通常无 | 每个符号带溯源与快照版本 |
-| 重复劳动 | 每个新 Agent 重来一遍 | 一次建档，任意 Agent 复用 |
+**核心指标**（实测）：近万文件的大型项目 → 401 文件 / **10512 符号** / 10 域分片 / ~3.3s / 溯源覆盖率 1.0。
 
 ## 核心能力一览
 
@@ -97,7 +90,6 @@ pip install -e ".[ann]"          # 可选：加 hnswlib + numpy，启用 hnsw �
 | 大项目加速向量检索 | `--ann-provider hnsw` 或配置 `ann_provider: hnsw`（需 `pip install ".[ann]"`） |
 | 确认改动没坏 | `pip install -e ".[ann,dev]" && pytest -q`（60 passed，无 key 也全绿）；push 后 GitHub Actions 自动跑 |
 | 查全部命令 | `cortex --help` ｜ 下方「完整 CLI 参考」 |
-| 发布前安全核查 | `docs/RELEASING.md`（密钥 / 发布源 / 依赖 / 验证 / 发版） |
 | 报告安全问题 | [`SECURITY.md`](SECURITY.md)（私有漏洞报告入口，请勿开公开 Issue） |
 
 **三个关键概念（后面会展开）：**
@@ -202,28 +194,6 @@ embedding:
 
 ---
 
-## 设计原则（实现遵循）
-
-- **通用 / 解耦**：不与任何项目绑定；`fixtures/sample_project/` 只是合成示例。
-- **确定性优先**：内置甄别 + 内置提取为主路径；AI 提取仅作兜底升级（§13.1）。
-- **归因双轨（§12）**：`@domain` 显式键 ‖ 向量隐式轨（软归属）平等裁决。**domain 永不因缺手写标注而全空**——真实项目无 `@domain` 时，用目录树 scope（§13.4 Q5）作稳定归属 + 向量隐式轨产出软分布，结果随 catalog 快照存留（§12.7，避免"代码没动、文档却变"）。
-- **三件套 + 三通道（§13.4）**：`向量 + 注释(@domain) + 注释文本(docstring)` 成对并列；检索返回 `annotation_hits` / `annotation_text_hits` / `vector_hits` 三通道并列、互不为主、不预融合，交 Agent 裁决。向量方向与文本注释方向地位平等（§12.1）；冲突原样并列并打 `conflict_flag`，不拦截。
-- **git 式 catalog**：每次重算 = 一次提交（强制 `change_reason`、可回滚、`active`=已发布版），并兜住「代码改了但 catalog 没跟上」的漂移窗口（§13.1 / §13.8 Q-3）。
-- **读 = Skill（零写）/ 写 = MCP（git 式提交）**：双通道物理分离（§13.7）。
-- **零人治理**：写侧质量门禁（声明级溯源）、触发分权（git hook/CI/Agent）、外部探针自动判 + 异构 jury + 行为金丝雀、宪法 AI 自举（§13.6 / §13.8 / §14）。
-
-## 模块映射（Phase → 代码）
-
-| Phase | 主线 | 模块 |
-|---|---|---|
-| 1 | 输入与源真相 | `config`, `triage`, `extract/*`, `pipeline` |
-| 2 | 归因与分类 | `attribution`（§12 双轨裁决 + 软分布 + §12.7 快照：domain 永不为空） |
-| 2 | catalog 版本化 | `store`（增量重算 + git 式提交 + 漂移兜底 + 回滚 + TTL 巡检） |
-| 3 | 渲染 | `render`（MkDocs 源 + llms.txt 按域分片 + 可选产物 config 开关） |
-| 4 | 索引 | `index`（三件套 + 向量近邻 + 三通道并列检索 + 可插拔 ANN 后端 + 近邻候选池近似） |
-| 5 | 接入协议 | `access/skill`, `access/write_channel`(MCP), `access/agents_md`, `access/onboarding` |
-| 6 | 治理 | `governance/gate`, `governance/trigger`, `governance/observability`, `governance/bootstrap` |
-
 ## 完整 CLI 参考（生产配置 `config.yaml`）
 
 ```bash
@@ -272,27 +242,5 @@ python -m unittest discover -s tests   # 等价（unittest 风格亦可跑）
 - `tests/test_integration_e2e.py`：offline 全链路（建档 → flat/hnsw 双索引 → 检索），断言向量/注释文本双通道命中与 flat-hnsw top-5 重合 ≥2。
 - **GitHub Actions**（`.github/workflows/ci.yml`）：push 到 `main` + PR 触发，Python 3.10 / 3.11 / 3.12 / 3.13 矩阵，`pip install .[ann]` 后 `pytest tests -q`。如需验证真语义路径，在仓库配 `SILICONFLOW_API_KEY` secret 并取消 ci.yml 里的 `env` 注释。
 - `pyproject.toml` 的 `testpaths = ["tests"]` 防止把 `fixtures/sample_project/` 里的样本 `.py` 误当测试收集。
-
-## roots 扫描范围（配置驱动）
-
-- root 两种写法：`- path: <dir>` 递归扫描（默认）；`- path: <dir>` + `files_only: true` **只扫该目录顶层文件、不递归**。
-  后者用于纳入**项目根级核心代码**（`cli.py`、`hermes_state.py`、`run_agent.py` 这类大而关键的入口文件），
-  又不会把同目录下的巨型子目录（如 114M 的 context_system/）一并拖入扫描。
-- 大文件性能：Python 提取器对 `ast.get_source_segment` 做了整篇只切一次的 O(行数) 优化 +
-  一次建父映射（判 method/function 从 O(n²) 降到 O(n)）。实测 846K 的 `cli.py` 提取 **2.58s → 0.17s**（约 15×），符号数不变。
-- 多 root 时 `rel` 自动加 root 名前缀，避免不同 root 下同名文件（`__init__.py`）碰撞导致增量重算不幂等 / 漂移误报。
-- 近邻候选池 `index.neighbor_pool`：符号量很大时把 O(n²) 精确近邻降为 O(n·pool) 确定性采样近似；`0` = 精确全量。
-
-## 已知边界（诚实声明）
-
-- 真实语义向量已接入且实测可用（硅基流动 BAAI/bge-m3）；代码默认仍 `offline`（零依赖、可复现），启用语义向量需联网 + 有效 key。向量只影响向量通道近邻质量，三通道并列返回结构不变。
-- **Tier1 `local` 本地模型尚未实现**——接口已留（`Embedder` 基类），是 P2 路线图项。
-- 归因隐式轨默认 `offline` 确定性哈希向量（软分布语义较弱，但零成本、可复现）；`attribution.provider=siliconflow` 可升级为真语义软归属。`attribution.domain_from` 默认 `structural`（目录树 scope，稳定可复现），可切 `vector`（向量 top 域，语义强但随模型漂移）。二者都是并列信号，不预融合。
-- 域骨架取目录树 scope（§13.4 Q5），是**结构域**而非纯语义能力域；跨域语义重叠靠 `domain_distribution` 软分布揭示，交 Agent 判断。关系抽取层、corpus 快照缓存、ANN 量化均在 P2 路线图。
-- MCP 写通道提供确定性的 `WriteChannel` 核心 + MCP 工具 schema；真实 `mcp` 包环境下的 stdio 服务由 `build_mcp_server()` 启用，离线时 CLI/CI 直接调用核心。
-- TypeScript 提取器为占位（`typescript_typedoc`），新语言按 `extract/` 适配器契约扩展即可。
-- MkDocs / PageFind / TypeDoc 站等附加产物走 config 开关（默认关），离线不构建、由 CI/人工启用。
-
-完整设计稿：[`docs/design.md`](docs/design.md)（999 行，含 §0 一页速查 · 八条主线 · §12 归因双轨 · §13 生命周期 · §14 宪法自举）；一页速查另见 [`docs/quickref.md`](docs/quickref.md)。
 
 安全政策：[`SECURITY.md`](SECURITY.md)（漏洞报告入口）。

@@ -53,10 +53,6 @@ pytest -q          # 期望 43 passed
 
 实现 `index.py` 里的 `VectorBackend` 基类（`build` / `query` / `save_index` / `load_index`），然后在 `_make_backend()` 里按 `ann_provider` 分发。保持与 `FlatBackend` 同口径（cosine 相似度，分数越高越近）。
 
-## 设计文档
-
-改动涉及核心机制（归因双轨、三通道、生命周期、治理）时，**先读 [`docs/design.md`](docs/design.md)**（999 行完整设计稿）——那里有每条设计的立论与已否决的备选方案，避免重复讨论已定的事。
-
 ## 安全问题
 
 发现密钥泄漏或安全漏洞，请**不要**开公开 issue，直接联系维护者。
